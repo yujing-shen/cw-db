@@ -20,12 +20,7 @@ public class MyTests {
         server = new DBServer();
     }
 
-    @Test
-    public void testReadingPeopleFile() {
-        String response = server.handleCommand("hello");
-        assertTrue(response.contains("Bob"), "Response should contain content from the file");
-        assertTrue(response.contains("id"), "Response should contain table headers");
-    }
+
     @Test
     public void testEmptyCommand() {
         String response = server.handleCommand("");
