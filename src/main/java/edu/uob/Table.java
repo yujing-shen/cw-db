@@ -40,7 +40,7 @@ public class Table {
         this.rows.add(row);
     }
 
-    public int getNextNextId() {
+    public int getNextId() {
         int idToGive = nextAvailableId;
         nextAvailableId++;
         return idToGive;

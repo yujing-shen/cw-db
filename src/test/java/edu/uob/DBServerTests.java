@@ -1,0 +1,148 @@
+package edu.uob;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+public class DBServerTests {
+    private DBServer server;
+
+    // Task3 Persistent Storage
+    @BeforeEach
+    public void setup() {
+        server = new DBServer();
+    }
+
+
+    @Test
+    public void testEmptyCommand() {
+        String response = server.handleCommand("");
+        assertTrue(response.length() > 0, "Server should return something even with empty command");
+    }
+
+    // Task4 Maintaining Relationships
+    @Test
+    public void testTableGeneration() {
+        Table testTable = new Table("test_people");
+
+        int firstId = testTable.getNextId();
+        assertEquals(1,firstId, "First Id should be 1");
+        assertEquals(2,testTable.getNextId(), "First Id should be 2");
+        assertEquals(3,testTable.getNextId(), "First Id should be 3");
+
+        testTable.updateNextAvailableId(8);
+
+        int idAfterLoad = testTable.getNextId();
+        assertEquals(9,idAfterLoad, "The next Id should be 9");
+
+    }
+
+    // Task5 Java Data Structures
+    @Test
+    public void testTableSaveToFile() throws IOException {
+        String testFolderPath = "databases";
+        String testTableName = "test_persistence";
+        Table testTable = new Table(testTableName);
+        testTable.addColumnName("id");
+        testTable.addColumnName("Name");
+        testTable.addColumnName("Age");
+
+        Row r1 = new Row();
+        r1.addValue("1");
+        r1.addValue("Alice");
+        r1.addValue("20");
+        testTable.addRow(r1);
+
+        testTable.saveToFIle(testFolderPath);
+        File savedFile = new File(testFolderPath + File.separator + testTableName + ".tab");
+        assertTrue(savedFile.exists(), "The file should exist");
+
+        BufferedReader reader = new BufferedReader(new FileReader(savedFile));
+        String header = reader.readLine();
+        String firstDataLine = reader.readLine();
+        reader.close();
+        assertEquals("id\tName\tAge", header, "The header format is incorrect. It should be a tab-separated string.");
+        assertEquals("1\tAlice\t20", firstDataLine, "The first data line is incorrect.");
+        savedFile.delete();
+    }
+
+    @Test
+    public void testCreateAndUseDatabase() {
+        DBServer server = new DBServer();
+        String testDbName = "test_cmd_db";
+
+        String response1 = server.handleCommand("CREATE DATABASE " + testDbName + ";");
+        assertTrue(response1.startsWith("[OK]"), "CREATE Ddatabase successfully should return [OK]");
+
+        String response2 = server.handleCommand("USE " + testDbName + ";");
+        assertTrue(response2.startsWith("[OK]"), "SWITCHED to existing database should return [OK]");
+
+        String response3 = server.handleCommand("USE a_fake_database;");
+        assertTrue(response3.startsWith("[ERROR]"), "SWITCHED to unexisting database should return [ERROR]");
+
+        File dbFolder = new File("databases" +  File.separator + testDbName);
+        if (!dbFolder.exists()) {
+            dbFolder.delete();
+        }
+    }
+
+    @Test
+    public void testCreateTable() {
+        DBServer server = new DBServer();
+        String dbName = "test_create_table";
+        String tableName = "test_students";
+
+        server.handleCommand("CREATE DATABASE " + dbName + ";");
+        server.handleCommand("USE " + dbName + ";");
+
+        String response1 = server.handleCommand("CREATE TABLE " + tableName + " (name, age, email);");
+        assertTrue(response1.startsWith("[OK]"), "Creating a table should return [OK]");
+
+        File tableFile = new File("databases" + File.separator + dbName + File.separator + tableName + ".tab");
+        assertTrue(tableFile.exists(), "The .tab file must be physically created on the disk");
+
+        String response2 = server.handleCommand("CREATE TABLE " + tableName + " (score);");
+        assertTrue(response2.startsWith("[ERROR]"), "Creating an already existing table must return [ERROR]");
+
+        tableFile.delete();
+        File dbFolder = new File("databases" + File.separator + dbName);
+        dbFolder.delete();
+
+    }
+
+    // Task 7: Test INSERT INTO
+    @Test
+    public void testInsertInto() {
+        DBServer server = new DBServer();
+        String dbName = "test_insert_db";
+        String tableName = "test_students";
+
+        server.handleCommand("CREATE DATABASE " + dbName + ";");
+        server.handleCommand("USE " + dbName + ";");
+        server.handleCommand("CREATE TABLE " + tableName + " (name, age, email);");
+
+        String insertQuery = "INSERT INTO " + tableName + " VALUES ('Bob', 21, 'bob@bristol.ac.uk');";
+        String response1 = server.handleCommand(insertQuery);
+        assertTrue(response1.startsWith("[OK]"), "Inserting into table should return [OK]");
+
+        String wrongQuery = "INSERT INTO " + tableName + " ('Alice', 22, 'alice@bristol.ac.uk');";
+        String response2 = server.handleCommand(wrongQuery);
+        assertTrue(response2.startsWith("[ERROR]"), "Inserting into table should return [ERROR]");
+
+        File tableFile = new File("databases" + File.separator + dbName + File.separator + tableName + ".tab");
+        tableFile.delete();
+        File dbFolder = new File("databases" + File.separator + dbName);
+        dbFolder.delete();
+
+    }
+
+
+}
+
