@@ -5,6 +5,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.file.Paths;
 import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.List;
 
 /** This class implements the DB server. */
@@ -204,19 +205,56 @@ public class DBServer {
         int fromIndex = -1;
         for (int i = 1; i < tokens.size(); i++) {
             String token = tokens.get(i);
-            if (token.equals("FROM")) {
+            if (token.equalsIgnoreCase("FROM")) {
                 fromIndex = i;
                 break;
             }
         }
-        if (fromIndex == -1) {
-            return "[ERROR] Invalid SELECT command, missing FROM";
+        if (fromIndex == -1 || fromIndex + 1 >= tokens.size()) {
+            return "[ERROR] Invalid SELECT command, missing FROM or table name";
         }
+
         String tableName = tokens.get(fromIndex + 1);
         try {
             Table myTable = loadTableFromFile(tableName);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
+            List<String> targetColumns = new ArrayList<>();
+
+            for (int i = 1; i < fromIndex; i++) {
+                String token = tokens.get(i);
+                if (!token.equals(",")) {
+                    targetColumns.add(token);
+                }
+            }
+
+            if (targetColumns.contains("*")) {
+                targetColumns = new ArrayList<>(myTable.getColumnNames());
+            }
+
+            StringBuilder result = new StringBuilder();
+            result.append("[OK]\n");
+
+
+            for (String column : targetColumns) {
+                if (!myTable.getColumnNames().contains(column)) {
+                    return "[ERROR] Column " + column + " does not exist";
+                }
+                result.append(column).append("\t");
+                }
+                result.append("\n");
+
+            List<String> columnNames = myTable.getColumnNames();
+            for (Row row : myTable.getRows()) {
+                for (String col : columnNames) {
+                    int index = columnNames.indexOf(col);
+                    result.append(row.getValueAt(index)).append("\t");
+                }
+                result.append("\n");
+            }
+
+            return result.toString();
+
+        } catch (Exception e) {
+            return "[ERROR] Failed to select table: " + e.getMessage();
         }
     }
 
