@@ -244,7 +244,7 @@ public class DBServer {
 
             List<String> columnNames = myTable.getColumnNames();
             for (Row row : myTable.getRows()) {
-                for (String col : columnNames) {
+                for (String col : targetColumns) {
                     int index = columnNames.indexOf(col);
                     result.append(row.getValueAt(index)).append("\t");
                 }
