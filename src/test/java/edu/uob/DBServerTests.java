@@ -8,8 +8,7 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 public class DBServerTests {
     private DBServer server;
@@ -141,6 +140,45 @@ public class DBServerTests {
         File dbFolder = new File("databases" + File.separator + dbName);
         dbFolder.delete();
 
+    }
+
+    // TASK 7: Test SELECT (without WHERE)
+    @Test 
+    public void testBasicSelect() {
+        DBServer server = new DBServer();
+        String dbName = "test_select_db";
+        String tableName = "test_students";
+
+        // 1. Setup: Create DB, create table, and insert TWO records
+        server.handleCommand("CREATE DATAbASE " + dbName + ";");
+        server.handleCommand("USE " + dbName + ";");
+        server.handleCommand("CREATE TABLE " + tableName + " (name, age);");
+        server.handleCommand("INSERT INTO " + tableName + " VALUES ('Alice', 20)");
+        server.handleCommand("INSERT INTO " + tableName + " VALUES ('Bob', 22)");
+
+        // 2. Test SELECT * (Should return all columns and all data)
+        String response1 = server.handleCommand("SELECT * FROM " + tableName + ";");
+        assertTrue(response1.startsWith("[OK]"), "Select * should return [OK]");
+        assertTrue(response1.contains("Alice") && response1.contains("20"), "Result should return Alice's data." );
+        assertTrue(response1.contains("Bob") && response1.contains("22"), "Result should return Alice's data." );
+        assertTrue(response1.contains("id") && response1.contains("name") && response1.contains("age"), "Result should contain all headers." );
+
+        // 3. Test SELECT specific columns (e.g., only 'name')
+        String response2 = server.handleCommand("SELECT name FROM " + tableName + ";");
+        assertTrue(response2.startsWith("[OK]"), "Select specific column should return [OK]");
+        assertTrue(response2.contains("Alice") && response2.contains("Bob"), "Result should contain all names." );
+        // System.out.println(response2);
+        assertFalse(response2.contains("20") || response2.contains("22"), "Result should NOT contain ages because we only selected 'name." );
+
+        // 4. Test Error: Select from a non-existent table
+        String response3 = server.handleCommand("SELECT * FROM fake_table" + ";");
+        assertTrue(response3.startsWith("[ERROR]"), "Selecting from a fake table should return [ERROR]");
+
+        // 5. Teardown: Clean up test files
+        File tableFile = new File("databases" + File.separator + dbName + File.separator + tableName + ".tab");
+        tableFile.delete();
+        File dbFolder = new File("databases" + File.separator + dbName);
+        dbFolder.delete();
     }
 
 
