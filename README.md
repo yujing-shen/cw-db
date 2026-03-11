@@ -23,17 +23,13 @@ Currently, the database engine supports the following core SQL operations:
 
 - **Switch database context:** Selects a database for subsequent operations.
 
-  SQL
-
-  ```
+  ```sql
   USE school;
   ```
-
+  
 - **Drop a database:** Safely deletes the database directory and all associated table files.
 
-  SQL
-
-  ```
+  ```sql
   DROP DATABASE school;
   ```
 
@@ -41,17 +37,12 @@ Currently, the database engine supports the following core SQL operations:
 
 - **Create a table:** Initializes a `.tab` file with a default `id` column and user-defined columns.
 
-  SQL
-
-  ```
+  ```sql 
   CREATE TABLE students (name, age, email);
-  ```
 
 - **Drop a table:** Deletes the specific table file from the disk.
 
-  SQL
-
-  ```
+  ```sql
   DROP TABLE students;
   ```
 
@@ -59,17 +50,13 @@ Currently, the database engine supports the following core SQL operations:
 
 - **Insert data:** Auto-generates an incrementing `id` and appends a new row to the table.
 
-  SQL
-
-  ```
+  ```sql
   INSERT INTO students VALUES ('Alice', 20, 'alice@bristol.ac.uk');
   ```
-
+  
 - **Select data (Basic):** Retrieves all columns or specific columns from a table.
 
-  SQL
-
-  ```
+  ```sql
   SELECT * FROM students;
   SELECT name, email FROM students;
   ```
@@ -87,29 +74,23 @@ The project is split into a Server and a Client. You need to run them in separat
 
 1. **Start the Server:**
 
-   Bash
-
-   ```
+   ```bash
    mvnw exec:java@server
    ```
-
+   
 2. **Start the Client:**
 
-   Bash
-
-   ```
+   ```bash
    mvnw exec:java@client
    ```
-
+   
 3. **Send Commands:** Type your SQL commands into the Client terminal. Ensure every command ends with a semicolon (`;`).
 
 ## 🧪 Testing
 
 The project uses JUnit 5 for automated testing. Tests cover both successful execution paths and error-handling scenarios (e.g., trying to drop a non-existent table). To run the tests:
 
-Bash
-
-```
+```bash
 mvn test
 ```
 
