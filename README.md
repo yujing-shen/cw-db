@@ -1,18 +1,18 @@
 # Java Relational Database Engine
 
-## 📖 Overview
+##  Overview
 This project is a lightweight, file-based Relational Database Management System (RDBMS) built entirely from scratch in Java. It features a custom SQL-like query parser, an object-oriented table management system, and persistent file storage. 
 
 This engine operates strictly without the use of external database libraries (like JDBC, SQLite, etc.), demonstrating core concepts of file I/O, string tokenization, data structures, and state management.
 
-## ✨ Features Implemented
+##  Features Implemented
 * **Custom Command Parser:** A tokenizer that parses user input into processable SQL tokens.
 * **Persistent Storage:** Databases are stored as directories, and tables are stored as physical `.tab` files on the disk.
 * **State Management:** Tracks the currently selected database context during the session.
 * **Robust Error Handling:** Defends against invalid commands, missing files, and duplicate entries, returning clear `[ERROR]` or `[OK]` responses.
 * **Automated Testing:** Comprehensive JUnit 5 test suites to ensure command reliability and prevent regressions.
 
-## 🛠️ Supported SQL Commands
+##  Supported SQL Commands
 
 Currently, the database engine supports the following core SQL operations:
 
@@ -61,7 +61,7 @@ Currently, the database engine supports the following core SQL operations:
   SELECT name, email FROM students;
   ```
 
-## 🚀 Getting Started
+##  Getting Started
 
 ### Prerequisites
 
@@ -86,7 +86,7 @@ The project is split into a Server and a Client. You need to run them in separat
    
 3. **Send Commands:** Type your SQL commands into the Client terminal. Ensure every command ends with a semicolon (`;`).
 
-## 🧪 Testing
+##  Testing
 
 The project uses JUnit 5 for automated testing. Tests cover both successful execution paths and error-handling scenarios (e.g., trying to drop a non-existent table). To run the tests:
 
@@ -94,7 +94,7 @@ The project uses JUnit 5 for automated testing. Tests cover both successful exec
 mvn test
 ```
 
-## 🗺️ Future Roadmap (TODO)
+##  Future Roadmap (TODO)
 
 - [ ] Implement `WHERE` clause parsing for conditional `SELECT` queries.
 - [ ] Add `DELETE FROM` to remove specific rows based on conditions.
