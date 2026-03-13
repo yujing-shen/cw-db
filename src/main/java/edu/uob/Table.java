@@ -24,6 +24,8 @@ public class Table {
         return tableName;
     }
 
+
+
     public List<String> getColumnNames() {
         return columnNames;
     }
