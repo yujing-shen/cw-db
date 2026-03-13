@@ -58,6 +58,7 @@ public class DBServer {
                 case "INSERT": return handleInsert(tokens);
                 case "SELECT": return handleSelect(tokens);
                 case "DROP"  : return handleDrop(tokens);
+                case "ALTER" : return handleAlter(tokens);
                 default:
                     return "[ERROR] Unknown command: " + firstWord;
             }
@@ -347,6 +348,52 @@ public class DBServer {
         myTable.updateNextAvailableId(maxId);
 
         return myTable;
+    }
+
+    private String handleAlter(List<String> tokens) {
+        if (tokens.size() < 5) {
+            return "[ERROR] Invalid ALTER command length";
+        }
+        if (this.currentDatabase == null || this.currentDatabase.isEmpty()) {
+            return "[ERROR] You must USE a database first";
+        }
+
+        String tableName = tokens.get(2);
+
+        try {
+            Table myTable = loadTableFromFile(tableName);
+            String action = tokens.get(3).toUpperCase();
+            String columnName = tokens.get(4);
+
+            if (action.equals("ADD")) {
+                if (myTable.getColumnNames().contains(columnName)) {
+                    return "[ERROR] Column " + columnName + " already exists";
+                }
+                myTable.addColumnName(columnName);
+                for (Row row : myTable.getRows()) {
+                    row.addValue("");
+                }
+
+            }else if (action.equals("DROP")) {
+                if (!myTable.getColumnNames().contains(columnName)) {
+                    return "[ERROR] Column " + columnName + " does not exist";
+                } else if (columnName.equalsIgnoreCase("id")) {
+                    return "[ERROR] Id cannot be deleted";
+                }
+                int index = myTable.getColumnNames().indexOf(columnName);
+                myTable.getColumnNames().remove(index);
+                for (Row row : myTable.getRows()) {
+                    row.getValues().remove(index);
+                }
+            }else {
+                return "[ERROR] Invalid ALTER command (ONLY ADD or DROP)";
+            }
+            String dbFolderPath = this.storageFolderPath + File.separator + this.currentDatabase;
+            myTable.saveToFIle(dbFolderPath);
+            return "[OK] Table " + tableName + " altered successfully";
+        } catch (IOException e) {
+            return "[ERROR] Failed to alter table: " + e.getMessage();
+        }
     }
 
     //  === Methods below handle networking aspects of the project - you will not need to change these ! ===
