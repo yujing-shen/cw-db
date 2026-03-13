@@ -59,7 +59,7 @@ public class DBServer {
                 case "SELECT": return handleSelect(tokens);
                 case "DROP"  : return handleDrop(tokens);
                 case "ALTER" : return handleAlter(tokens);
-
+                case "DELETE": return handleDelete(tokens);
                 default:
                     return "[ERROR] Unknown command: " + firstWord;
             }
@@ -302,6 +302,45 @@ public class DBServer {
         }
         return "[ERROR] Invalid DROP target: " + tokens.get(1);
 
+    }
+
+    private String handleDelete(List<String> tokens) throws IOException {
+        if (tokens.size() < 7) {
+            return "[ERROR] Invalid DELETE command format or missing WHERE clause";
+        }
+        if (this.currentDatabase == null || this.currentDatabase.isEmpty()) {
+            return "[ERROR] You must USE a database first";
+        }
+
+        String tableName = tokens.get(2);
+
+        try {
+            Table myTable = loadTableFromFile(tableName);
+
+            if (!tokens.get(3).equalsIgnoreCase("WHERE")) {
+                return "[ERROR] DELETE command must contain a WHERE clause";
+            }
+            String targetDeleteColumn = tokens.get(4);
+
+            String targetDeleteValue = tokens.get(6).replace("'", "").replace(";", "").trim();
+            int index = myTable.getColumnNames().indexOf(targetDeleteColumn);
+            if (index == -1) {
+                return "[ERROR] Column " + targetDeleteColumn + " does not exist";
+            }
+            for(int i = myTable.getRows().size() -1; i >= 0; i--) {
+                Row row = myTable.getRows().get(i);
+                String cellValue = row.getValues().get(index).replace("'","").trim();
+
+                if (cellValue.equals(targetDeleteValue)) {
+                    myTable.getRows().remove(i);
+                }
+            }
+            myTable.saveToFIle(this.storageFolderPath + File.separator + this.currentDatabase);
+
+            return "[OK] Record(s) deleted successfully from table " + tableName;
+        } catch (Exception e) {
+            return "[ERROR] Failed to delete: " + e.getMessage();
+        }
     }
 
     private Table loadTableFromFile(String tableName) throws IOException {
