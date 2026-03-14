@@ -60,6 +60,7 @@ public class DBServer {
                 case "DROP"  : return handleDrop(tokens);
                 case "ALTER" : return handleAlter(tokens);
                 case "DELETE": return handleDelete(tokens);
+                case "UPDATE": return handleUpdate(tokens);
                 default:
                     return "[ERROR] Unknown command: " + firstWord;
             }
@@ -434,6 +435,54 @@ public class DBServer {
         } catch (IOException e) {
             return "[ERROR] Failed to alter table: " + e.getMessage();
         }
+    }
+
+    // UPDATE student SET age = 26 WHERE name == 'Alice' ;
+    private String handleUpdate(List<String> tokens) throws IOException {
+        if (tokens.size() < 10) {
+            return "[ERROR] Invalid UPDATE command length";
+        }
+        if (this.currentDatabase == null || this.currentDatabase.isEmpty()) {
+            return "[ERROR] You must USE a database first";
+        }
+
+        String tableName = tokens.get(1);
+
+        try {
+            Table myTable = loadTableFromFile(tableName);
+            if (!tokens.get(2).equalsIgnoreCase("SET")) {
+                return "[ERROR] Invalid UPDATE command with no SET";
+            }
+            if (!tokens.get(6).equalsIgnoreCase("WHERE")) {
+                return "[ERROR] Invalid UPDATE command with no WHERE";
+            }
+            String updateColunmn = tokens.get(3);
+            String newValue = tokens.get(5).replace("'","").trim();
+            String conditionColumn = tokens.get(7);
+            String conditionValue = tokens.get(9).replace("'","").trim();
+
+            int updateIndex = myTable.getColumnNames().indexOf(updateColunmn);
+            if (updateIndex == -1) {
+                return "[ERROR] Column " + updateColunmn + " does not exist";
+            } else if (updateIndex == 0 || updateColunmn.equalsIgnoreCase("id")) {
+                return "[ERROR] Column Id cannot be updated" ;
+            }
+            int conditionIndex = myTable.getColumnNames().indexOf(conditionColumn);
+            if (conditionIndex == -1) {
+                return "[ERROR] Condition column " + conditionColumn + " does not exist";
+            }
+            for (Row row : myTable.getRows()) {
+                String cellValue = row.getValues().get(conditionIndex).replace("'","").trim();
+                if (cellValue.equals(conditionValue)) {
+                    row.getValues().set(updateIndex, newValue);
+                }
+            }
+            myTable.saveToFIle(this.storageFolderPath + File.separator + this.currentDatabase);
+            return "[OK] Table " + tableName + " updated successfully";
+        } catch (IOException e) {
+            return "[ERROR] Failed to update table: " + e.getMessage();
+        }
+
     }
 
     //  === Methods below handle networking aspects of the project - you will not need to change these ! ===
