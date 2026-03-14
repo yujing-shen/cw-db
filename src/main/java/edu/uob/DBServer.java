@@ -322,18 +322,18 @@ public class DBServer {
                 return "[ERROR] DELETE command must contain a WHERE clause";
             }
             String targetDeleteColumn = tokens.get(4);
+            String operator = tokens.get(5);
 
             String targetDeleteValue = tokens.get(6).replace("'", "").replace(";", "").trim();
-            int index = myTable.getColumnNames().indexOf(targetDeleteColumn);
-            if (index == -1) {
-                return "[ERROR] Column " + targetDeleteColumn + " does not exist";
-            }
+
             for(int i = myTable.getRows().size() -1; i >= 0; i--) {
                 Row row = myTable.getRows().get(i);
-                String cellValue = row.getValues().get(index).replace("'","").trim();
-
-                if (cellValue.equals(targetDeleteValue)) {
-                    myTable.getRows().remove(i);
+                try {
+                    if (checkCondition(row, myTable, targetDeleteColumn, operator, targetDeleteValue)) {
+                        myTable.getRows().remove(i);
+                    }
+                } catch (RuntimeException e) {
+                    return e.getMessage();
                 }
             }
             myTable.saveToFIle(this.storageFolderPath + File.separator + this.currentDatabase);
@@ -459,6 +459,7 @@ public class DBServer {
             String updateColunmn = tokens.get(3);
             String newValue = tokens.get(5).replace("'","").trim();
             String conditionColumn = tokens.get(7);
+            String operator = tokens.get(8);
             String conditionValue = tokens.get(9).replace("'","").trim();
 
             int updateIndex = myTable.getColumnNames().indexOf(updateColunmn);
@@ -467,14 +468,14 @@ public class DBServer {
             } else if (updateIndex == 0 || updateColunmn.equalsIgnoreCase("id")) {
                 return "[ERROR] Column Id cannot be updated" ;
             }
-            int conditionIndex = myTable.getColumnNames().indexOf(conditionColumn);
-            if (conditionIndex == -1) {
-                return "[ERROR] Condition column " + conditionColumn + " does not exist";
-            }
+
             for (Row row : myTable.getRows()) {
-                String cellValue = row.getValues().get(conditionIndex).replace("'","").trim();
-                if (cellValue.equals(conditionValue)) {
-                    row.getValues().set(updateIndex, newValue);
+                try {
+                    if (checkCondition(row, myTable, conditionColumn, operator, conditionValue)) {
+                        row.getValues().set(updateIndex, newValue);
+                    }
+                } catch( RuntimeException e ) {
+                    return  e.getMessage();
                 }
             }
             myTable.saveToFIle(this.storageFolderPath + File.separator + this.currentDatabase);
