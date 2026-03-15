@@ -202,8 +202,30 @@ public class DBServer {
 
     }
     private String handleSelect(List<String> tokens) {
+        if (tokens.size() < 4) {
+            return "[ERROR] Invalid SELECT command";
+        }
         if (this.currentDatabase == null || this.currentDatabase.isEmpty()) {
             return "[ERROR] You must USE a database first";
+        }
+
+        boolean hasWhere = false;
+        int whereIndex = -1;
+        for (int i = 0; i < tokens.size(); i++) {
+            if (tokens.get(i).equalsIgnoreCase("WHERE")) {
+                hasWhere = true;
+                whereIndex = i;
+                break;
+            }
+        }
+
+        String conditionColumn = "";
+        String operator = "";
+        String conditionValue = "";
+        if (hasWhere) {
+            conditionColumn = tokens.get(whereIndex + 1);
+            operator = tokens.get(whereIndex + 2);
+            conditionValue = tokens.get(whereIndex + 3).replace("'","").replace(";","").trim();
         }
         // Find fromIndex
         int fromIndex = -1;
@@ -248,11 +270,26 @@ public class DBServer {
 
             List<String> columnNames = myTable.getColumnNames();
             for (Row row : myTable.getRows()) {
-                for (String col : targetColumns) {
-                    int index = columnNames.indexOf(col);
-                    result.append(row.getValueAt(index)).append("\t");
+                if (!hasWhere) {
+                    for (String col : targetColumns) {
+                        int index = columnNames.indexOf(col);
+                        result.append(row.getValueAt(index)).append("\t");
+                    }
+                    result.append("\n");
+                } else {
+                    try {
+                        if (checkCondition(row, myTable, conditionColumn, operator, conditionValue)) {
+                            for (String col : targetColumns) {
+                                int index = columnNames.indexOf(col);
+                                result.append(row.getValueAt(index)).append("\t");
+                            }
+                            result.append("\n");
+                        }
+                    } catch (RuntimeException e) {
+                        return e.getMessage();
+                    }
                 }
-                result.append("\n");
+
             }
 
             return result.toString();
