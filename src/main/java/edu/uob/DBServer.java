@@ -61,6 +61,7 @@ public class DBServer {
                 case "ALTER" : return handleAlter(tokens);
                 case "DELETE": return handleDelete(tokens);
                 case "UPDATE": return handleUpdate(tokens);
+                case "JOIN"  : return handleJoin(tokens);
                 default:
                     return "[ERROR] Unknown command: " + firstWord;
             }
@@ -521,6 +522,74 @@ public class DBServer {
             return "[ERROR] Failed to update table: " + e.getMessage();
         }
 
+    }
+
+    private  String handleJoin(List<String> tokens)  {
+        if (tokens.size() < 8) {
+            return "[ERROR] Invalid JOIN command length";
+        }
+        if (this.currentDatabase == null || this.currentDatabase.isEmpty()) {
+            return "[ERROR] You must USE a database first";
+        }
+
+        if (!tokens.get(2).equalsIgnoreCase("AND") ||
+            !tokens.get(4).equalsIgnoreCase("ON")  ||
+            !tokens.get(6).equalsIgnoreCase("AND")) {
+            return "[ERROR] Invalid JOIN syntax, Must be: JOIN t1 AND t2 ON c1 AND c2";
+        }
+
+        String table1Name = tokens.get(1);
+        String table2Name = tokens.get(3);
+        String col1Name = tokens.get(5);
+        String col2Name = tokens.get(7);
+
+        try {
+            Table table1 = loadTableFromFile(table1Name);
+            Table table2 = loadTableFromFile(table2Name);
+
+            int col1Index = table1.getColumnNames().indexOf(col1Name);
+            int col2Index = table2.getColumnNames().indexOf(col2Name);
+            if (col1Index == -1 ) {
+                return "[ERROR] Column " + col1Name + " does not exist in " + table1Name;
+            }
+            if (col2Index == -1 ) {
+                return "[ERROR] Column " + col2Name + " does not exist in " + table2Name;
+            }
+            StringBuilder result = new StringBuilder("[OK]\n");
+
+            for (String c1 : table1.getColumnNames()) {
+                result.append(table1Name).append(".").append(c1).append("\t");
+            }
+            for (int i = 0; i < table2.getColumnNames().size(); i++) {
+                result.append(table2Name).append(".").append(table2.getColumnNames().get(i));
+                if (i < table2.getColumnNames().size() - 1) {
+                    result.append("\t");
+                }
+            }
+            result.append("\n");
+
+            for (Row row1 : table1.getRows()) {
+                String val1 = row1.getValues().get(col1Index).replace("'","").trim();
+                for (Row row2 : table2.getRows()) {
+                    String val2 = row2.getValues().get(col2Index).replace("'","").trim();
+                    if (val1.equals(val2)) {
+                        for (String v1: row1.getValues()) {
+                            result.append(v1).append("\t");
+                        }
+                        for (int i = 0; i < row2.getValues().size(); i++) {
+                            result.append(row2.getValues().get(i));
+                            if (i < row2.getValues().size() - 1) {
+                                result.append("\t");
+                            }
+                        }
+                        result.append("\n");
+                    }
+                }
+            }
+            return  result.toString();
+        } catch (IOException e) {
+            return "[ERROR] Failed to JOIN: " + e.getMessage();
+        }
     }
 
     //  === Methods below handle networking aspects of the project - you will not need to change these ! ===
