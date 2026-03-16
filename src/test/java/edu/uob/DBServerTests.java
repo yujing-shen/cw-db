@@ -87,7 +87,7 @@ public class DBServerTests {
         assertTrue(response3.startsWith("[ERROR]"), "SWITCHED to unexisting database should return [ERROR]");
 
         File dbFolder = new File("databases" +  File.separator + testDbName);
-        if (!dbFolder.exists()) {
+        if (dbFolder.exists()) {
             dbFolder.delete();
         }
     }
@@ -351,7 +351,7 @@ public class DBServerTests {
         String errorMathResponse = server.handleCommand("UPDATE " + tableName + " SET age = 99 WHERE name > 'Alice';");
         assertTrue(errorMathResponse.startsWith("[ERROR]"), "Comparing strings with math operators must return [ERROR]");
 
-        File tableFile = new File("databases" + File.separator + dbName + "." + tableName + ".tab");
+        File tableFile = new File("databases" + File.separator + dbName + File.separator + tableName + ".tab");
         if (tableFile.exists()) {
             tableFile.delete();
         }
@@ -401,7 +401,7 @@ public class DBServerTests {
         String errorBadWhere = server.handleCommand("SELECT * FROM " + tableName + " WHERE height == '180';");
         assertTrue(errorBadWhere.startsWith("[ERROR]"), "WHERE with fake column should error");
 
-        File tableFile = new File("databases" + File.separator + dbName + "." + tableName + ".tab");
+        File tableFile = new File("databases" + File.separator + dbName + File.separator + tableName + ".tab");
         if (tableFile.exists()) {
             tableFile.delete();
         }
