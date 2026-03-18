@@ -417,6 +417,62 @@ public class DBServerTests {
         }
     }
 
+    @Test
+    public void testJoinCommand() {
+        DBServer server = new DBServer();
+        String dbName = "test_join_db";
+        String t1 = "students";
+        String t2 = "marks";
+
+        server.handleCommand("CREATE DATABASE " + dbName + ";");
+        server.handleCommand("USE " + dbName + ";");
+        server.handleCommand("CREATE TABLE " + t1 + " (name, email);");
+        server.handleCommand("INSERT INTO " + t1 + " VALUES ('Alice', 'alice@uob.com');");
+        server.handleCommand("INSERT INTO " + t1 + " VALUES ('Bob', 'bob@uob.com');");
+        server.handleCommand("INSERT INTO " + t1 + " VALUES ('Owen', 'owen@uob.com');");
+        server.handleCommand("INSERT INTO " + t1 + " VALUES ('Jack', 'jack@uob.com');");
+
+
+
+        server.handleCommand("CREATE TABLE " + t2 + " (studentName, pass);");
+        server.handleCommand("INSERT INTO " + t2 + " VALUES ('Alice', 'YES');");
+        server.handleCommand("INSERT INTO " + t2 + " VALUES ('Owen', 'YES');");
+        server.handleCommand("INSERT INTO " + t2 + " VALUES ('Jack', 'NO');");
+
+        String joinResponse = server.handleCommand("JOIN " + t1 + " AND " + t2 + " ON name AND studentName;");
+        System.out.println("--- CUSTOM JOIN RESULT ---");
+        System.out.println(joinResponse);
+
+        assertTrue(joinResponse.startsWith("[OK]"), "JOIN must return [OK]");
+
+        assertFalse(joinResponse.contains("students.id"), "Original id from t1 must be discarded");
+        assertFalse(joinResponse.contains("marks.id"), "Original id from t2 must be discarded");
+
+        assertFalse(joinResponse.contains("students.name"), "Matching column from t1 must be discarded");
+        assertFalse(joinResponse.contains("marks.studentName"), "Matching column from t2 must be discarded");
+
+        assertTrue(joinResponse.contains("students.email"), "Header must contain students.email");
+        assertTrue(joinResponse.contains("marks.pass"), "Header must contain marks.pass");
+
+        assertTrue(joinResponse.contains("1\t'alice@uob.com'\t'YES'"), "Data row should start with generated id 1 and only contain kept columns");
+        assertTrue(joinResponse.contains("2\t'owen@uob.com'\t'YES'"), "Data row should start with generated id 2 and only contain kept columns");
+        assertTrue(joinResponse.contains("jack@uob.com"), "Jack should be correctly joined with a NO pass");
+
+        assertFalse(joinResponse.contains("bob@uob.com"), "Bob should not be in the inner join result");
+
+
+        File dbFolder = new File("databases" + File.separator + dbName);
+        if (dbFolder.exists()) {
+            File[] files = dbFolder.listFiles();
+            if (files != null) {
+                for (File file : files) {
+                    file.delete();
+                }
+            }
+            dbFolder.delete();
+        }
+    }
+
 
 }
 
