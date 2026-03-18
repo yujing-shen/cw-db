@@ -220,13 +220,17 @@ public class DBServer {
             }
         }
 
-        String conditionColumn = "";
-        String operator = "";
-        String conditionValue = "";
+        List<String> conditionTokens = new ArrayList<>();
         if (hasWhere) {
-            conditionColumn = tokens.get(whereIndex + 1);
-            operator = tokens.get(whereIndex + 2);
-            conditionValue = tokens.get(whereIndex + 3).replace("'","").replace(";","").trim();
+            for (int i = whereIndex + 1; i < tokens.size(); i++) {
+                String t = tokens.get(i);
+                if (!t.equals(";")) {
+                    t = t.replace(";","");
+                    if (!t.isEmpty()) {
+                        conditionTokens.add(t);
+                    }
+                }
+            }
         }
         // Find fromIndex
         int fromIndex = -1;
@@ -274,15 +278,15 @@ public class DBServer {
                 if (!hasWhere) {
                     for (String col : targetColumns) {
                         int index = columnNames.indexOf(col);
-                        result.append(row.getValueAt(index)).append("\t");
+                        result.append(row.getValueAt(index).replace("'","")).append("\t");
                     }
                     result.append("\n");
                 } else {
                     try {
-                        if (checkCondition(row, myTable, conditionColumn, operator, conditionValue)) {
+                        if (evaluateCondition(row, myTable, conditionTokens)) {
                             for (String col : targetColumns) {
                                 int index = columnNames.indexOf(col);
-                                result.append(row.getValueAt(index)).append("\t");
+                                result.append(row.getValueAt(index).replace("'","")).append("\t");
                             }
                             result.append("\n");
                         }
@@ -583,7 +587,7 @@ public class DBServer {
                                 currentColName.equalsIgnoreCase("id")) {
                                 continue;
                             }
-                            result.append(row1.getValues().get(j) + "\t");
+                            result.append(row1.getValues().get(j).replace("'","") + "\t");
                         }
 
                         for (int j = 0; j < row2.getValues().size(); j++) {
@@ -592,7 +596,7 @@ public class DBServer {
                                     currentColName.equalsIgnoreCase("id")) {
                                 continue;
                             }
-                            result.append(row2.getValues().get(j) + "\t");
+                            result.append(row2.getValues().get(j).replace("'","") + "\t");
                         }
                         result.append("\n");
                     }
@@ -668,6 +672,56 @@ public class DBServer {
         }
 
         throw new RuntimeException("[ERROR] Unknown operator: " + operator);
+    }
 
+    private boolean evaluateCondition(Row row, Table table, List<String> condTokens) {
+        if (condTokens.isEmpty() || condTokens == null) {
+            throw new RuntimeException("Empty condition");
+        }
+        int bracketDepth = 0;
+        int mainOpIndex = -1;
+        String mainOp = "";
+
+        for (int i = 0; i < condTokens.size(); i++) {
+            String token = condTokens.get(i);
+            if (token.equals("(")) {
+                bracketDepth++;
+            } else if (token.equals(")")) {
+                bracketDepth--;;
+            } else if (bracketDepth == 0 && (token.equalsIgnoreCase("AND") || token.equalsIgnoreCase("OR"))) {
+                mainOpIndex = i;
+                mainOp = token.toUpperCase();
+                break;
+            }
+        }
+
+        if  (mainOpIndex != -1) {
+            List<String> leftTokens = condTokens.subList(0, mainOpIndex);
+            List<String> rightTokens = condTokens.subList(mainOpIndex + 1, condTokens.size());
+
+            boolean leftResult = evaluateCondition(row, table, leftTokens);
+            boolean rightResult = evaluateCondition(row, table, rightTokens);
+
+            if (mainOp.equals("AND")) {
+                return leftResult && rightResult;
+            } else  {
+                return leftResult || rightResult;
+            }
+        }
+
+        if (condTokens.get(0).equals("(") &&
+                condTokens.get(condTokens.size() - 1).equals(")")
+        ) {
+            return evaluateCondition(row, table, condTokens.subList(1, condTokens.size() - 1));
+        }
+
+        if (condTokens.size() == 3) {
+            String col = condTokens.get(0);
+            String op =  condTokens.get(1);
+            String val = condTokens.get(2).replace("'","").trim();
+
+            return checkCondition(row, table, col, op, val);
+        }
+        throw new RuntimeException("Invalid condition syntax: " + String.join(" ",condTokens));
     }
 }
