@@ -561,6 +561,7 @@ public class DBServer {
             }
             StringBuilder result = new StringBuilder();
             result.append("[OK]");
+            result.append("\n");
             result.append("id\t");
             for (int i = 0; i < table1.getColumnNames().size(); i++) {
                 if (table1.getColumnNames().get(i).equalsIgnoreCase("id") ||
