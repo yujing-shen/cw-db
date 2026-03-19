@@ -1,74 +1,47 @@
 # Java Relational Database Engine (Zero-Dependency)
 
 ##  Overview
-This project is a lightweight, file-based Relational Database Management System (RDBMS) built entirely from scratch in pure Java. It features a custom SQL-like query parser, a memory-safe table management system, an independent conditional filtering engine, and persistent file storage.
+This project is a lightweight, fully functional Relational Database Management System (RDBMS) built entirely from scratch in pure Java. It operates strictly without external database libraries (like JDBC or SQLite), serving as a deep-dive exploration into database internals, file I/O operations, custom AST parsing, and state management.
 
-Built strictly without any external database libraries (like JDBC, SQLite, or ORMs), this engine demonstrates a deep understanding of core computer science concepts: disk I/O manipulation, string tokenization, dynamic data structures, memory management, and relational algebra (Nested Loop Joins).
-##  Core Architecture & Features
-* **Custom Command Parser:** A robust tokenizer that parses user input into processable SQL tokens, handling edge cases like missing spaces and namespace collisions.
-* **Persistent File Storage:** Databases are mapped to physical directories, and tables are serialized as `.tab` files on the disk, ensuring data persistence across sessions.
-* **Conditional Evaluation Engine:** A dynamic `WHERE` clause parser capable of extracting operators (`==`, `>`, `<`, `>=`, `<=`, `!=`, `LIKE`), sanitizing data (removing quotes/spaces), and safely casting strings to numeric types for mathematical comparisons.
-* **Relational Joins:** Implements the classic Nested Loop Join algorithm to merge tables based on matching column values, fully supporting qualified names (e.g., `tableName.columnName`) to prevent column ambiguity.
-* **Safe State Management:** Defends against invalid commands, missing files, concurrent modification exceptions during deletions, and out-of-bounds errors, returning clear `[ERROR]` or `[OK]` protocols.
-* **Automated Testing:** Comprehensive JUnit 5 test suites covering successful execution paths, edge cases, and strict error-handling scenarios.
+Built with a strong emphasis on **system robustness and defensive programming**, this engine doesn't just execute "happy path" queries; it proactively defends against malformed inputs, namespace collisions, and corrupted disk states.
+
+##  Core Architecture & Engineering Features
+* **Recursive Descent Parser (AST):** upgraded from a liner tokenizer to a recursive Abstract Syntax Tree parser. It dynamically evaluates complex, nested boolean logic in `WHERE` clauses (e.g., handling nested parentheses and multiple `AND`/`OR` operators).
+* **Defensive Pre-processing Shield (Tokenizer):** Engineered a custom tokenizer that survives hostile user inputs. It automaticaaly resolves "glued tokens" (e.g., `WHERE (age>20) AND (pass=='YES')`), safely protects string literals containing punctuation, and strictly enforces mandatory trailling semicolons(`;`) at the server gate.
+* **Safe Schema Evolution**: Implemented strict memory-safe mutations for `ALTER TABLE ` commands. The engine proactively pads legacy data rows with `NULL` values during column additions, effectively preventing `IndexOutOfBounds` data corruption when loading from disk.
+* **Relational Algebra (Inner Joins):** Implements a customised Nested Loop Join algorithm that automatically discards redundant matching keys and generates fully qualified column headers (e.g., `tableName.columnName`) to prevent namespace pollution.
+* **File-Based Persistence:** Maps databases to physical directories and serialises tables into TSV (Tab-Separated Values) `.tab` files, mimicking real-world flat-file database structures.
 
 ##  Supported SQL Commands
 
-The database engine supports a complete suite of CRUD operations and complex relational queries:
+### 1. **Database & Table Management (DDL)**
 
-### 1. Database Management
-* **Create/Use/Drop a database:** Creates a new directory.
   ```sql
-  CREATE DATABASE school;
-  USE school;
-  DROP DATABASE school;
-  
-### 2. Table Management
-
-- **Create a table (auto-generates a primary `id` column):** 
-
-  ```sql 
+  CREATE DATABASE university;
+  USE university;
   CREATE TABLE students (name, age, email);
-  
-- **Alter table structure (Add/Drop columns dynamically):**
-  ```sql
-  ALTER TABLE students ADD height;
+  ALTER TABLE students ADD graduation_year;
   ALTER TABLE students DROP email;
-
-- **Drop a table:** 
-
-  ```sql
   DROP TABLE students;
   ```
 
-### 3. Data Manipulation (CRUD)
 
-- **Insert data:** 
 
-  ```sql
-  INSERT INTO students VALUES ('Alice', 20, 'alice@bristol.ac.uk');
-  ```
-  
-- **Select data (with Conditional Filtering):** 
+### 2. Data Manipulation & Querying (DML & DQL)
 
-  ```sql
-  SELECT * FROM students;
-  SELECT name, email FROM students WHERE age > 18;
-  ```
+```sql
+-- Insert data
+INSERT INTO students VALUES ('Alice', 22, 'alice@bristol.ac.uk');
 
-- **Update existing records:**
+-- Complex Conditional Selects (AST Evaluated)
+SELECT name, email FROM students WHERE (age>20) AND (pass == 'TRUE');
 
-  ```sql
-  UPDATE students SET age = 21 WHERE name == 'Alice';
-  ```
+-- Safe Updates and Deletions
+UPDATE students SET age = 23 WHERE name == 'Alice';
+DELETE FROM students WHERE pass == 'FALSE';
+```
 
-- **Delete records:**
-
-  ```sql
-  DELETE FROM students WHERE pass == 'No';
-  ```
-
-### 4. Relational Operations
+### 3. Relational Operations
 
 - **Inner Join:** Merges two tables based on a specificed condition, outputing a new virtual table with fully qualified column headers.
 
@@ -76,7 +49,13 @@ The database engine supports a complete suite of CRUD operations and complex rel
   JOIN students AND marks ON id AND id;
   ```
 
-  
+
+## Testing Engineering (TDD)
+
+The project is fortified by a comprehensive JUnit 5 test suite, simulating both unit-level edge cases and complete End-to-End (E2E) transcript scenarios:
+
+- **E2E Scenario Testing:** Automates real-world "playbooks" (Database Creation -> Inserting -> Schema Mutation -> Complex Queries) to ensure system stability across the entire transaction lifecycle.
+- **Destructive Testing:** Actively tests system resilience against querying non-existent tables, mutating primary `id` columns, and dropping missing databases;
 
 ##  Getting Started
 
@@ -115,8 +94,5 @@ mvn test
 
 [ ] **B-Tree Indexing:** Implement tree-based data structures to optimize `SELECT` query performance from *O(N)* to *O(\log N)*.
 
-[ ] **Network Sockets:** Upgrade the Client-Server communication to use TCP/IP sockets instead of local streams.
+[ ] **ACID Transactions & Concurrency:** Implement read/Write Locks and Write-Ahead Logging (WAL) to support `COMMIT` and `ROLLBACK` features for current clients.
 
-[ ] **Transaction Management:** Implement ACID properties with `BEGIN`, `COMMIT`, and `ROLLBACK` capabilities.
-
-[ ] **Abstract Syntax Tree (AST):** Upgrade the linear tokenizer to an AST parser for handling complex nested queries (e.g., `AND`/`OR` logic).
