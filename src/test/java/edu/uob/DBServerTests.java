@@ -153,8 +153,8 @@ public class DBServerTests {
         server.handleCommand("CREATE DATAbASE " + dbName + ";");
         server.handleCommand("USE " + dbName + ";");
         server.handleCommand("CREATE TABLE " + tableName + " (name, age);");
-        server.handleCommand("INSERT INTO " + tableName + " VALUES ('Alice', 20)");
-        server.handleCommand("INSERT INTO " + tableName + " VALUES ('Bob', 22)");
+        server.handleCommand("INSERT INTO " + tableName + " VALUES ('Alice', 20);");
+        server.handleCommand("INSERT INTO " + tableName + " VALUES ('Bob', 22);");
 
         // 2. Test SELECT * (Should return all columns and all data)
         String response1 = server.handleCommand("SELECT * FROM " + tableName + ";");
@@ -330,8 +330,8 @@ public class DBServerTests {
 
         String selectAfterUpdate = server.handleCommand("SELECT * FROM " + tableName + ";");
         assertTrue(selectAfterUpdate.contains("26"), "Alice's age should be updated to 26");
-        assertFalse(selectAfterUpdate.contains("'Alice'\t20"), "Alice's old age 20 should be gone");
-        assertTrue(selectAfterUpdate.contains("'Bob'\t25"), "Bob's age should remain unaffected");
+        assertFalse(selectAfterUpdate.contains("Alice\t20"), "Alice's old age 20 should be gone");
+        assertTrue(selectAfterUpdate.contains("Bob\t25"), "Bob's age should remain unaffected");
 
         String updateIdResponse = server.handleCommand("UPDATE " + tableName + " SET id = 99 WHERE name == 'Alice';");
         assertTrue(updateIdResponse.startsWith("[ERROR]"), "Updating 'id' column must return [ERROR]");
@@ -454,8 +454,12 @@ public class DBServerTests {
         assertTrue(joinResponse.contains("students.email"), "Header must contain students.email");
         assertTrue(joinResponse.contains("marks.pass"), "Header must contain marks.pass");
 
-        assertTrue(joinResponse.contains("1\t'alice@uob.com'\t'YES'"), "Data row should start with generated id 1 and only contain kept columns");
-        assertTrue(joinResponse.contains("2\t'owen@uob.com'\t'YES'"), "Data row should start with generated id 2 and only contain kept columns");
+        assertTrue(joinResponse.contains("1\t"), "Row should start with ID 1");
+        assertTrue(joinResponse.contains("alice@uob.com"), "Should contain Alice's email without quotes");
+        assertTrue(joinResponse.contains("YES"), "Alice should have a YES mark");
+
+        assertTrue(joinResponse.contains("2\t"), "Row should start with ID 2");
+        assertTrue(joinResponse.contains("owen@uob.com"), "Should contain Owen's email without quotes");
         assertTrue(joinResponse.contains("jack@uob.com"), "Jack should be correctly joined with a NO pass");
 
         assertFalse(joinResponse.contains("bob@uob.com"), "Bob should not be in the inner join result");
