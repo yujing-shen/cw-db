@@ -59,7 +59,7 @@ public class DBServerTests {
         r1.addValue("20");
         testTable.addRow(r1);
 
-        testTable.saveToFIle(testFolderPath);
+        testTable.saveToFile(testFolderPath);
         File savedFile = new File(testFolderPath + File.separator + testTableName + ".tab");
         assertTrue(savedFile.exists(), "The file should exist");
 

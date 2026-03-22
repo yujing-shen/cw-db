@@ -143,7 +143,7 @@ public class DBServer {
             }
             try {
                 String dbFolderPath = this.storageFolderPath + File.separator + this.currentDatabase;
-                newTable.saveToFIle(dbFolderPath);
+                newTable.saveToFile(dbFolderPath);
                 return "[OK]";
             } catch (IOException e) {
                 return "[ERROR] Failed to create table file: " + e.getMessage();
@@ -172,7 +172,7 @@ public class DBServer {
         String tablePath = this.storageFolderPath + File.separator + this.currentDatabase + File.separator + tableName + ".tab";
         File tableFile = new File(tablePath);
         if (!tableFile.exists()) {
-            return "[ERROR] Database " + tableName + " does not exist";
+            return "[ERROR] Table " + tableName + " does not exist";
         }
 
         try {
@@ -201,14 +201,11 @@ public class DBServer {
             myTable.addRow(row);
 
             String dbFolderPath = this.storageFolderPath + File.separator + this.currentDatabase;
-            myTable.saveToFIle(dbFolderPath);
+            myTable.saveToFile(dbFolderPath);
             return "[OK]";
-
         } catch (Exception e) {
             return "[ERROR] Failed to insert table: " + e.getMessage();
         }
-
-
 
     }
     private String handleSelect(List<String> tokens) {
@@ -279,8 +276,8 @@ public class DBServer {
                     return "[ERROR] Column " + column + " does not exist";
                 }
                 result.append(column).append("\t");
-                }
-                result.append("\n");
+            }
+            result.append("\n");
 
             List<String> columnNames = myTable.getColumnNames();
             for (Row row : myTable.getRows()) {
@@ -387,7 +384,7 @@ public class DBServer {
                     return e.getMessage();
                 }
             }
-            myTable.saveToFIle(this.storageFolderPath + File.separator + this.currentDatabase);
+            myTable.saveToFile(this.storageFolderPath + File.separator + this.currentDatabase);
 
             return "[OK]";
         } catch (Exception e) {
@@ -417,9 +414,9 @@ public class DBServer {
             }
         }
 
-        String dataline = buffReader.readLine();
-        while (dataline != null) {
-            String[] values = dataline.split("\t");
+        String dataLine = buffReader.readLine();
+        while (dataLine != null) {
+            String[] values = dataLine.split("\t");
             Row newRow = new Row();
             for (String value : values) {
                 newRow.addValue(value);
@@ -434,7 +431,7 @@ public class DBServer {
             } catch (NumberFormatException nfe) {
 
             }
-            dataline = buffReader.readLine();
+            dataLine = buffReader.readLine();
         }
         buffReader.close();
         myTable.updateNextAvailableId(maxId);
@@ -481,7 +478,7 @@ public class DBServer {
                 return "[ERROR] Invalid ALTER command (ONLY ADD or DROP)";
             }
             String dbFolderPath = this.storageFolderPath + File.separator + this.currentDatabase;
-            myTable.saveToFIle(dbFolderPath);
+            myTable.saveToFile(dbFolderPath);
             return "[OK]";
         } catch (IOException e) {
             return "[ERROR] Failed to alter table: " + e.getMessage();
@@ -529,7 +526,7 @@ public class DBServer {
                     return  e.getMessage();
                 }
             }
-            myTable.saveToFIle(this.storageFolderPath + File.separator + this.currentDatabase);
+            myTable.saveToFile(this.storageFolderPath + File.separator + this.currentDatabase);
             return "[OK]";
         } catch (IOException e) {
             return "[ERROR] Failed to update table: " + e.getMessage();
@@ -664,7 +661,10 @@ public class DBServer {
             return cellValue.equals(targetValue);
         } else if (operator.equals("!=")) {
             return !cellValue.equals(targetValue);
-        } else if (operator.equals(">") || operator.equals(">=") || operator.equals("<") || operator.equals("<=")) {
+        } else if (operator.equals(">") ||
+                operator.equals(">=") ||
+                operator.equals("<") ||
+                operator.equals("<=")) {
             try {
                 float cellNum = Float.parseFloat(cellValue);
                 float targetNum = Float.parseFloat(targetValue);
@@ -697,8 +697,9 @@ public class DBServer {
             if (token.equals("(")) {
                 bracketDepth++;
             } else if (token.equals(")")) {
-                bracketDepth--;;
-            } else if (bracketDepth == 0 && (token.equalsIgnoreCase("AND") || token.equalsIgnoreCase("OR"))) {
+                bracketDepth--;
+            } else if (bracketDepth == 0 &&
+                    (token.equalsIgnoreCase("AND") || token.equalsIgnoreCase("OR"))) {
                 mainOpIndex = i;
                 mainOp = token.toUpperCase();
                 break;
