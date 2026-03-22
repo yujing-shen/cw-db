@@ -54,7 +54,7 @@ public class Table {
         }
     }
 
-    public void saveToFIle(String storageFolderPath) throws IOException {
+    public void saveToFile(String storageFolderPath) throws IOException {
         java.io.File file = new java.io.File(storageFolderPath + separator +this.tableName + ".tab");
 
         BufferedWriter writer = new java.io.BufferedWriter(new java.io.FileWriter(file));
