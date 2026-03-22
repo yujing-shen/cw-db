@@ -560,22 +560,8 @@ public class DBServer {
             result.append("[OK]");
             result.append("\n");
             result.append("id\t");
-            for (int i = 0; i < table1.getColumnNames().size(); i++) {
-                if (table1.getColumnNames().get(i).equalsIgnoreCase("id") ||
-                    table1.getColumnNames().get(i).equals(col1Name)) {
-                    continue;
-                } else {
-                    result.append(table1Name + "." + table1.getColumnNames().get(i) + "\t");
-                }
-            }
-            for (int i = 0; i < table2.getColumnNames().size(); i++) {
-                if (table2.getColumnNames().get(i).equalsIgnoreCase("id") ||
-                    table2.getColumnNames().get(i).equals(col2Name)) {
-                    continue;
-                } else {
-                    result.append(table2Name + "." + table2.getColumnNames().get(i) + "\t");
-                }
-            }
+            appendJoinHeadersFromTable(table1Name, col1Name, table1, result);
+            appendJoinHeadersFromTable(table2Name, col2Name, table2, result);
             result.append("\n");
             int newIdCounter = 1;
 
@@ -586,25 +572,10 @@ public class DBServer {
                     String val2 = row2.getValues().get(index2).replace("'","").trim();
 
                     if (val1.equals(val2)) {
-                        result.append(newIdCounter + "\t");
+                        result.append(newIdCounter).append("\t");
                         newIdCounter++;
-                        for (int j = 0; j < row1.getValues().size(); j++) {
-                            String currentColName = table1.getColumnNames().get(j);
-                            if (currentColName.equals(col1Name) ||
-                                currentColName.equalsIgnoreCase("id")) {
-                                continue;
-                            }
-                            result.append(row1.getValues().get(j).replace("'","") + "\t");
-                        }
-
-                        for (int j = 0; j < row2.getValues().size(); j++) {
-                            String currentColName = table2.getColumnNames().get(j);
-                            if (currentColName.equals(col2Name) ||
-                                    currentColName.equalsIgnoreCase("id")) {
-                                continue;
-                            }
-                            result.append(row2.getValues().get(j).replace("'","") + "\t");
-                        }
+                        appendJoinDatalineFromTable(col1Name, table1, result, row1);
+                        appendJoinDatalineFromTable(col2Name, table2, result, row2);
                         result.append("\n");
                     }
                 }
@@ -615,6 +586,28 @@ public class DBServer {
             return "[ERROR] " + e.getMessage();
         }
 
+    }
+
+    private void appendJoinDatalineFromTable(String colName, Table table, StringBuilder result, Row row) {
+        for (int j = 0; j < row.getValues().size(); j++) {
+            String currentColName = table.getColumnNames().get(j);
+            if (currentColName.equals(colName) ||
+                currentColName.equalsIgnoreCase("id")) {
+                continue;
+            }
+            result.append(row.getValues().get(j).replace("'","")).append("\t");
+        }
+    }
+
+    private void appendJoinHeadersFromTable(String tableName, String colName, Table table, StringBuilder result) {
+        for (int i = 0; i < table.getColumnNames().size(); i++) {
+            if (table.getColumnNames().get(i).equalsIgnoreCase("id") ||
+                table.getColumnNames().get(i).equals(colName)) {
+                continue;
+            } else {
+                result.append(tableName + "." + table.getColumnNames().get(i)).append("\t");
+            }
+        }
     }
 
     //  === Methods below handle networking aspects of the project - you will not need to change these ! ===
