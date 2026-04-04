@@ -7,7 +7,7 @@ public class Tokenizer {
     public Tokenizer() {
     }
 
-    public List<String> tokenize(String query) {
+    public List<String> parseTokens(String query) {
         List<String> tokens = new ArrayList<>();
         query = query.trim(); // delete the space in the start and end
 
