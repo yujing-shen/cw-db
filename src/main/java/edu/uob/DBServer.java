@@ -52,7 +52,7 @@ public class DBServer {
         }
         try {
             Tokenizer tokenizer = new Tokenizer();
-            List<String> tokens = tokenizer.tokenize(trimmedCommand);
+            List<String> tokens = tokenizer.parseTokens(trimmedCommand);
 
             if (tokens.isEmpty()) {
                 return "[ERROR] Empty command";
@@ -208,69 +208,48 @@ public class DBServer {
         }
 
     }
+
+    // Handles the SELECT command to query and filter data from a specific table.
     private String handleSelect(List<String> tokens) {
-        if (tokens.size() < 4) {
-            return "[ERROR] Invalid SELECT command";
-        }
-        if (this.currentDatabase == null || this.currentDatabase.isEmpty()) {
+        if (tokens.size() < 4) return "[ERROR] Invalid SELECT command";
+        if (this.currentDatabase == null || this.currentDatabase.isEmpty())
             return "[ERROR] You must USE a database first";
+
+        // Locate the FROM keyword using native list methods to avoid manual iteration
+        int fromIndex = tokens.indexOf("FROM");
+        if (fromIndex == -1 || fromIndex + 1 >= tokens.size()) return "[ERROR] Invalid SELECT command";
+
+        // Extract target columns for the projection phase (fetching requested fields)
+        List<String> targetColumns = new ArrayList<>();
+        for (int i = 1; i < fromIndex; i++) {
+            if (!tokens.get(i).equals(",")) targetColumns.add(tokens.get(i));
         }
 
-        boolean hasWhere = false;
-        int whereIndex = -1;
-        for (int i = 0; i < tokens.size(); i++) {
-            if (tokens.get(i).equalsIgnoreCase("WHERE")) {
-                hasWhere = true;
-                whereIndex = i;
-                break;
-            }
-        }
-
+        // Extract condition tokens for the WHERE clause (selection phase)
+        boolean hasWhere = tokens.contains("WHERE");
         List<String> conditionTokens = new ArrayList<>();
         if (hasWhere) {
+            int whereIndex = tokens.indexOf("WHERE");
             for (int i = whereIndex + 1; i < tokens.size(); i++) {
-                String t = tokens.get(i);
-                if (!t.equals(";")) {
-                    t = t.replace(";","");
-                    if (!t.isEmpty()) {
-                        conditionTokens.add(t);
-                    }
-                }
+                String t = tokens.get(i).replace(";","");
+                if (!t.isEmpty())  conditionTokens.add(t);
             }
-        }
-        // Find fromIndex
-        int fromIndex = -1;
-        for (int i = 1; i < tokens.size(); i++) {
-            String token = tokens.get(i);
-            if (token.equalsIgnoreCase("FROM")) {
-                fromIndex = i;
-                break;
-            }
-        }
-        if (fromIndex == -1 || fromIndex + 1 >= tokens.size()) {
-            return "[ERROR] Invalid SELECT command, missing FROM or table name";
         }
 
         String tableName = tokens.get(fromIndex + 1);
         try {
+            // Load the table object
             Table myTable = loadTableFromFile(tableName);
-            List<String> targetColumns = new ArrayList<>();
 
-            for (int i = 1; i < fromIndex; i++) {
-                String token = tokens.get(i);
-                if (!token.equals(",")) {
-                    targetColumns.add(token);
-                }
-            }
-
+            // Handle wildcard character for selecting all columns
             if (targetColumns.contains("*")) {
                 targetColumns = new ArrayList<>(myTable.getColumnNames());
             }
 
             StringBuilder result = new StringBuilder();
-            result.append("[OK]\n");
+            result.append("[OK]").append("\n");
 
-
+            // Validate and append header columns
             for (String column : targetColumns) {
                 if (!myTable.getColumnNames().contains(column)) {
                     return "[ERROR] Column " + column + " does not exist";
@@ -280,33 +259,33 @@ public class DBServer {
             result.append("\n");
 
             List<String> columnNames = myTable.getColumnNames();
+
+            // Iterate through rows and evaluate conditions
             for (Row row : myTable.getRows()) {
-                if (!hasWhere) {
-                    for (String col : targetColumns) {
-                        int index = columnNames.indexOf(col);
-                        result.append(row.getValueAt(index).replace("'","")).append("\t");
-                    }
-                    result.append("\n");
-                } else {
+                boolean shouldPrint = true;
+
+                if (hasWhere) {
                     try {
-                        if (evaluateCondition(row, myTable, conditionTokens)) {
-                            for (String col : targetColumns) {
-                                int index = columnNames.indexOf(col);
-                                result.append(row.getValueAt(index).replace("'","")).append("\t");
-                            }
-                            result.append("\n");
-                        }
+                        // Delegate logical evaluation to the AST parser
+                        shouldPrint = evaluateCondition(row, myTable, conditionTokens);
                     } catch (RuntimeException e) {
                         return e.getMessage();
                     }
                 }
 
+                // Append data only if it satisfies the WHERE clause
+                if (shouldPrint) {
+                    for (String col : targetColumns) {
+                        int index = columnNames.indexOf(col);
+                        result.append(row.getValueAt(index).replace("'","")).append("\t");
+                    }
+                    result.append("\n");
+                }
             }
-
             return result.toString();
 
         } catch (Exception e) {
-            return "[ERROR] Failed to select table: " + e.getMessage();
+            return "[ERROR] Failed to insert table: " + e.getMessage();
         }
     }
 
@@ -560,8 +539,8 @@ public class DBServer {
             result.append("[OK]");
             result.append("\n");
             result.append("id\t");
-            appendJoinHeadersFromTable(table1Name, col1Name, table1, result);
-            appendJoinHeadersFromTable(table2Name, col2Name, table2, result);
+            mergeJoinHeaders(table1Name, col1Name, table1, result);
+            mergeJoinHeaders(table2Name, col2Name, table2, result);
             result.append("\n");
             int newIdCounter = 1;
 
@@ -574,8 +553,8 @@ public class DBServer {
                     if (val1.equals(val2)) {
                         result.append(newIdCounter).append("\t");
                         newIdCounter++;
-                        appendJoinDatalineFromTable(col1Name, table1, result, row1);
-                        appendJoinDatalineFromTable(col2Name, table2, result, row2);
+                        mergeJoinData(col1Name, table1, result, row1);
+                        mergeJoinData(col2Name, table2, result, row2);
                         result.append("\n");
                     }
                 }
@@ -588,7 +567,7 @@ public class DBServer {
 
     }
 
-    private void appendJoinDatalineFromTable(String colName, Table table, StringBuilder result, Row row) {
+    private void mergeJoinData(String colName, Table table, StringBuilder result, Row row) {
         for (int j = 0; j < row.getValues().size(); j++) {
             String currentColName = table.getColumnNames().get(j);
             if (currentColName.equals(colName) ||
@@ -599,7 +578,7 @@ public class DBServer {
         }
     }
 
-    private void appendJoinHeadersFromTable(String tableName, String colName, Table table, StringBuilder result) {
+    private void mergeJoinHeaders(String tableName, String colName, Table table, StringBuilder result) {
         for (int i = 0; i < table.getColumnNames().size(); i++) {
             if (table.getColumnNames().get(i).equalsIgnoreCase("id") ||
                 table.getColumnNames().get(i).equals(colName)) {
