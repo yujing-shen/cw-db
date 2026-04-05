@@ -5,9 +5,11 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.file.Paths;
 import java.nio.file.Files;
+import java.sql.Array;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Scanner;
 
 /** This class implements the DB server. */
 public class DBServer {
@@ -371,53 +373,6 @@ public class DBServer {
         }
     }
 
-    private Table loadTableFromFile(String tableName) throws IOException {
-        String name = this.storageFolderPath + File.separator + this.currentDatabase + File.separator + tableName + ".tab";
-        File fileToOpen = new File(name);
-
-        if (!fileToOpen.exists()) {
-            throw new IOException("Table " + tableName + " does not exist");
-        }
-
-        FileReader reader = new FileReader(fileToOpen);
-        BufferedReader buffReader = new BufferedReader(reader);
-
-        Table myTable = new Table(tableName);
-        int maxId = 0;
-
-        String headerLine = buffReader.readLine();
-        if (headerLine != null) {
-            String[] headers = headerLine.split("\t");
-            for (String header : headers) {
-                myTable.addColumnName(header);
-            }
-        }
-
-        String dataLine = buffReader.readLine();
-        while (dataLine != null) {
-            String[] values = dataLine.split("\t");
-            Row newRow = new Row();
-            for (String value : values) {
-                newRow.addValue(value);
-            }
-            myTable.addRow(newRow);
-
-            try {
-                int currentId = Integer.parseInt(values[0]);
-                if (currentId > maxId) {
-                    maxId = currentId;
-                }
-            } catch (NumberFormatException nfe) {
-
-            }
-            dataLine = buffReader.readLine();
-        }
-        buffReader.close();
-        myTable.updateNextAvailableId(maxId);
-
-        return myTable;
-    }
-
     private String handleAlter(List<String> tokens) {
         if (tokens.size() < 5) {
             return "[ERROR] Invalid ALTER command length";
@@ -466,48 +421,48 @@ public class DBServer {
 
     // UPDATE student SET age = 26 WHERE name == 'Alice' ;
     private String handleUpdate(List<String> tokens) throws IOException {
-        if (tokens.size() < 10) {
-            return "[ERROR] Invalid UPDATE command length";
-        }
-        if (this.currentDatabase == null || this.currentDatabase.isEmpty()) {
-            return "[ERROR] You must USE a database first";
-        }
-
-        String tableName = tokens.get(1);
+        if (tokens.size() < 6 || !tokens.contains("SET")) return "[ERROR] Invalid UPDATE syntax";
+        if (this.currentDatabase == null || this.currentDatabase.isEmpty()) return "[ERROR] You must USE a database first";
 
         try {
+            String tableName = tokens.get(1);
             Table myTable = loadTableFromFile(tableName);
-            if (!tokens.get(2).equalsIgnoreCase("SET")) {
-                return "[ERROR] Invalid UPDATE command with no SET";
-            }
-            if (!tokens.get(6).equalsIgnoreCase("WHERE")) {
-                return "[ERROR] Invalid UPDATE command with no WHERE";
-            }
-            String updateColumn = tokens.get(3);
-            String newValue = tokens.get(5).replace("'","").trim();
-            String conditionColumn = tokens.get(7);
-            String operator = tokens.get(8);
-            String conditionValue = tokens.get(9).replace("'","").trim();
 
-            int updateIndex = myTable.getColumnNames().indexOf(updateColumn);
-            if (updateIndex == -1) {
-                return "[ERROR] Column " + updateColumn + " does not exist";
-            } else if (updateIndex == 0 || updateColumn.equalsIgnoreCase("id")) {
-                return "[ERROR] Column Id cannot be updated" ;
-            }
+            // Locate boundaries for SET and WHERE clauses
+            int setIndex = tokens.indexOf("SET");
+            int whereIndex = tokens.indexOf("WHERE");
+            boolean hasWhere = (whereIndex != -1);
+            int endOfSet = hasWhere ? whereIndex : tokens.size();
 
-            for (Row row : myTable.getRows()) {
-                try {
-                    if (checkCondition(row, myTable, conditionColumn, operator, conditionValue)) {
-                        row.getValues().set(updateIndex, newValue);
-                    }
-                } catch( RuntimeException e ) {
-                    return  e.getMessage();
+            // Extract the target column and new value (Assuming standard format: SET column = 'value')
+            String targetCol = tokens.get(setIndex + 1);
+            String newValue = tokens.get(setIndex + 3).replace("'", "").trim();
+
+            // Delegate index resolution to the Table class
+            int targetColIndex = myTable.getColumnIndexOrThrow(targetCol);
+
+            // Extract condition tokens if a WHERE clause exists
+            List<String> conditionTokens = new ArrayList<>();
+            if (hasWhere) {
+                for (int i = whereIndex + 1; i < tokens.size(); i++) {
+                    String t = tokens.get(i).replace(";","");
+                    if (!t.isEmpty()) conditionTokens.add(t);
                 }
             }
-            myTable.saveToFile(this.storageFolderPath + File.separator + this.currentDatabase);
-            return "[OK]";
-        } catch (IOException e) {
+
+            // Iterate through rows and apply the update
+            for (Row row : myTable.getRows()) {
+                // If no WHERE clause, update all. Otherwise, ask the AST parser.
+                boolean shouldUpdate = !hasWhere || evaluateCondition(row, myTable, conditionTokens);
+
+                if (shouldUpdate) {
+                    // Delegate the data mutation to the Row class
+                    row.updateValueAt(targetColIndex, newValue);
+                }
+            }
+            saveTableToFile(myTable);
+            return "[OK]\n";
+        } catch (Exception e) {
             return "[ERROR] Failed to update table: " + e.getMessage();
         }
 
@@ -707,4 +662,79 @@ public class DBServer {
         }
         throw new RuntimeException("Invalid condition syntax: " + String.join(" ",condTokens));
     }
+
+    private void saveTableToFile(Table tableToSave) {
+        if (this.currentDatabase == null || this.currentDatabase.isEmpty()) {
+            throw new RuntimeException("[ERROR] No database selected. Cannot save table.");
+        }
+
+        try {
+            // Construct the database directory path
+            String dbFolderPath = this.storageFolderPath + File.separator + this.currentDatabase;
+            // Delegate the actual file writing to the Table object
+            tableToSave.saveToFile(dbFolderPath);
+        } catch (IOException e) {
+            throw new RuntimeException("[ERROR] Failed to save table to disk: " + e.getMessage());
+        }
+    }
+
+    private Table loadTableFromFile(String tableName) {
+        if (this.currentDatabase == null || this.currentDatabase.isEmpty()) {
+            throw new RuntimeException("[ERROR] No database selected. Cannot load table.");
+        }
+
+        String tablePath = this.storageFolderPath + File.separator + this.currentDatabase + File.separator + tableName + ".tab";
+        File file = new File(tablePath);
+
+        if (!file.exists()) {
+            throw new RuntimeException("[ERROR] Table " + tableName + " does not exist.");
+        }
+
+        try {
+            Table loadedTable = new Table(tableName);
+            Scanner scanner = new Scanner(file);
+
+            // Phase 1: Parse Header
+            if (scanner.hasNextLine()) {
+                String headerLine = scanner.nextLine();
+                String[] headers = headerLine.split("\t", -1);
+                loadedTable.setColumnNames(new ArrayList<>(Arrays.asList(headers)));
+            }
+
+            int maxIdFound = 0;
+            // Phase 2: Parse Data Rows
+            while (scanner.hasNextLine()) {
+                String dataLine = scanner.nextLine();
+                if (dataLine.trim().isEmpty()) continue; // Skip empty lines
+
+                String[] values = dataLine.split("\t", -1);
+                Row newRow = new Row();
+                for (String val : values) {
+                    newRow.addValue(val);
+                }
+                loadedTable.addRow(newRow);
+
+                // Phase 3 : ID Recalibration tracking
+                if (values.length > 0) {
+                    try {
+                        int currentId = Integer.parseInt(values[0]);
+                         if (currentId > maxIdFound) {
+                             maxIdFound = currentId;
+                         }
+                    } catch (NumberFormatException e) {
+                        // Ignore if the first column is not a numeric ID
+                    }
+                }
+                scanner.close();
+
+                // Calibrate the ID generator to avoid collisions with existing data
+                loadedTable.updateNextAvailableId(maxIdFound);
+            }
+            return loadedTable;
+        }catch (IOException e) {
+            throw new RuntimeException("[ERROR] Failed to read table file: " + e.getMessage());
+        }
+    }
 }
+
+

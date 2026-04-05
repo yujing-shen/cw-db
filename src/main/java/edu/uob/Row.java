@@ -25,9 +25,24 @@ public class Row {
         return "";
     }
 
+    public String getCleanValueAt(int index) {
+        if (index < 0 || index >= this.values.size()) {
+            throw new IndexOutOfBoundsException("[ERROR] Column index out of bounds in Row.");
+        }
+        return this.values.get(index).replace("'","").trim();
+    }
+
     public void setValueAt(int index, String newValue) {
         if  (index >= 0 && index < this.values.size()) {
             this.values.set(index, newValue);
         }
     }
+
+    public void updateValueAt(int index, String newValue) {
+        if (index < 0 || index >= this.values.size()) {
+            throw new IndexOutOfBoundsException("[ERROR] Column index out of bounds in Row.");
+        }
+        this.values.set(index, newValue);
+    }
+
 }
