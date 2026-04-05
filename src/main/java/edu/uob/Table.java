@@ -18,16 +18,19 @@ public class Table {
         this.columnNames = new ArrayList<>();
         this.rows = new ArrayList<>();
         this.nextAvailableId = 1;
+
     }
 
     public String getTableName() {
         return tableName;
     }
 
-
-
     public List<String> getColumnNames() {
         return columnNames;
+    }
+
+    public void setColumnNames(List<String> columnNames) {
+        this.columnNames = columnNames;
     }
 
     public List<Row> getRows() {
@@ -54,6 +57,14 @@ public class Table {
         }
     }
 
+    public int getColumnIndexOrThrow(String columnName) {
+        int index = this.columnNames.indexOf(columnName);
+        if (index == -1) {
+            throw new IllegalArgumentException("[ERROR] Column " + columnName + " does not exist in table " + this.tableName);
+        }
+        return index;
+    }
+
     public void saveToFile(String storageFolderPath) throws IOException {
         java.io.File file = new java.io.File(storageFolderPath + separator +this.tableName + ".tab");
 
@@ -69,5 +80,13 @@ public class Table {
         }
         writer.flush();
         writer.close();
+    }
+
+    public void addColumn(String newColumnName) {
+        this.columnNames.add(newColumnName);
+        // Backfill existing rows to prevent IndexOutOfBounds exceptions during future updates
+        for (Row row : this.rows) {
+            row.addValue("NULL");
+        }
     }
 }
