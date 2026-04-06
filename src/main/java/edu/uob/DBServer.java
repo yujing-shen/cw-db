@@ -489,48 +489,71 @@ public class DBServer {
 
     }
 
+    /**
+     * Handles the JOIN command to combine rows from two tables bases on a related column.
+     *
+     * @param tokens The tokenized SQL command list.
+     * @return A formatted string representation of the joined data.
+     */
     private  String handleJoin(List<String> tokens)  {
+        // Syntax expected: JOIN table1 AND table2 ON col1 AND col2
         if (tokens.size() < 8) {
             return "[ERROR] Invalid JOIN command length";
+        }
+        if (!tokens.get(2).equalsIgnoreCase("AND") ||
+            !tokens.get(4).equalsIgnoreCase("ON") ||
+            !tokens.get(6).equalsIgnoreCase("AND"))  {
+            return "[ERROR] Invalid JOIN syntax";
         }
         if (this.currentDatabase == null || this.currentDatabase.isEmpty()) {
             return "[ERROR] You must USE a database first";
         }
-        String table1Name = tokens.get(1);
-        String table2Name = tokens.get(3);
-        String col1Name = tokens.get(5);
-        String col2Name = tokens.get(7);
+
         try {
+            // Extract table and column names
+            String table1Name = tokens.get(1);
+            String table2Name = tokens.get(3);
+            String col1Name = tokens.get(5);
+            String col2Name = tokens.get(7);
+
+            // Load tables from disk
             Table table1 = loadTableFromFile(table1Name);
             Table table2 = loadTableFromFile(table2Name);
-            int index1 = table1.getColumnNames().indexOf(col1Name);
-            int index2 = table2.getColumnNames().indexOf(col2Name);
+
+            // Resolve column indices using OOP magic
+            int index1 = table1.getColumnIndexOrThrow(col1Name);
+            int index2 = table2.getColumnIndexOrThrow(col2Name);
             if (index1 == -1 ) {
                 return "[ERROR] Column " + col1Name + " does not exist";
             }
             if (index2 == -1 ) {
                 return "[ERROR] Column " + col2Name + " does not exist";
             }
+
+            // Initialize the result builder and build the unified header
             StringBuilder result = new StringBuilder();
-            result.append("[OK]");
-            result.append("\n");
+            result.append("[OK]").append("\n");
+
+            // Builder the header: id | table1.col | table2.col
             result.append("id\t");
-            mergeJoinHeaders(table1Name, col1Name, table1, result);
-            mergeJoinHeaders(table2Name, col2Name, table2, result);
+            buildJoinHeader(result,table1);
+            buildJoinHeader(result, table2);
             result.append("\n");
-            int newIdCounter = 1;
 
-            for (Row row1 : table1.getRows()) {
-                String val1 = row1.getValues().get(index1).replace("'","").trim();
+            // Nested Loop Join (The core engine of relational databases)
+            int joinIdCounter = 1;
 
-                for (Row row2 : table2.getRows()) {
-                    String val2 = row2.getValues().get(index2).replace("'","").trim();
+            for (Row r1: table1.getRows()) {
+                String matchVal1 = r1.getCleanValueAt(index1);
 
-                    if (val1.equals(val2)) {
-                        result.append(newIdCounter).append("\t");
-                        newIdCounter++;
-                        mergeJoinData(col1Name, table1, result, row1);
-                        mergeJoinData(col2Name, table2, result, row2);
+                for (Row r2: table2.getRows()) {
+                    String matchVal2 = r2.getCleanValueAt(index2);
+
+                    // If the ON condition holds, merge and append the rows
+                    if (matchVal1.equals(matchVal2)) {
+                        result.append(joinIdCounter++).append("\t");
+                        buildJoinDataRow(result, table1, r1);
+                        buildJoinDataRow(result, table2, r2);
                         result.append("\n");
                     }
                 }
@@ -543,27 +566,37 @@ public class DBServer {
 
     }
 
-    private void mergeJoinData(String colName, Table table, StringBuilder result, Row row) {
-        for (int j = 0; j < row.getValues().size(); j++) {
-            String currentColName = table.getColumnNames().get(j);
-            if (currentColName.equals(colName) ||
-                currentColName.equalsIgnoreCase("id")) {
-                continue;
+    /**
+     * Helper method to append table headers with proper prefixes (e.g., table1.name)
+     * to avoid naming collisions in the merged JOIN view.
+     */
+    private void buildJoinHeader(StringBuilder sb, Table table) {
+        for (String colName : table.getColumnNames()) {
+            // Usually, the original 'id' columns are omitted in the joined output
+            // to avoid confusion with the newly generated join ID.
+            if (!colName.equalsIgnoreCase("id")) {
+                sb.append(table.getTableName()).append(".").append(colName).append("\t");
             }
-            result.append(row.getValues().get(j).replace("'","")).append("\t");
         }
     }
 
-    private void mergeJoinHeaders(String tableName, String colName, Table table, StringBuilder result) {
-        for (int i = 0; i < table.getColumnNames().size(); i++) {
-            if (table.getColumnNames().get(i).equalsIgnoreCase("id") ||
-                table.getColumnNames().get(i).equals(colName)) {
-                continue;
-            } else {
-                result.append(tableName + "." + table.getColumnNames().get(i)).append("\t");
+    /**
+     * Helper method to append row data for the JOIN view,
+     * meticulously skipping the original ID columns to align with the header.
+     */
+
+    private void buildJoinDataRow(StringBuilder sb, Table table, Row row) {
+        List<String> colNames = table.getColumnNames();
+        List<String> values = row.getValues();
+
+        for (int i = 0; i < colNames.size(); i++) {
+            if (!colNames.get(i).equalsIgnoreCase("id")) {
+                sb.append(values.get(i).replace("'", "")).append("\t");
             }
         }
     }
+
+
 
     //  === Methods below handle networking aspects of the project - you will not need to change these ! ===
 
