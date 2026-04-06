@@ -156,12 +156,21 @@ public class DBServer {
         }
 
     }
+
+    /** Handles the INSERT INTO command to add a new record to a table.
+     * Utilizes the Table's internal auto-increment ID generator to ensure
+     * primary key uniqueness and delegates I/O to the persistence helper,
+     *
+     * @param tokens The tokenized SQL command list.
+     * @return A success message [OK] or an error string.
+     */
+
     private String handleInsert(List<String> tokens) {
         if (this.currentDatabase == null || this.currentDatabase.isEmpty()) {
             return "[ERROR] You must USE a database first";
         }
 
-        if (tokens.size() < 6 ||
+        if (tokens.size() < 7 ||
                 !tokens.get(0).equals("INSERT") ||
                 !tokens.get(1).equals("INTO") ||
                 !tokens.get(3).equals("VALUES")
@@ -169,45 +178,45 @@ public class DBServer {
             return "[ERROR] Invalid INSERT command";
         }
 
-
-        String tableName = tokens.get(2);
-        String tablePath = this.storageFolderPath + File.separator + this.currentDatabase + File.separator + tableName + ".tab";
-        File tableFile = new File(tablePath);
-        if (!tableFile.exists()) {
-            return "[ERROR] Table " + tableName + " does not exist";
-        }
-
         try {
+            String tableName = tokens.get(2);
             Table myTable = loadTableFromFile(tableName);
-            Row row = new Row();
 
-            int id = myTable.getNextId();
-            row.addValue(String.valueOf(id));
-
-            boolean insideBrackets = false;
-            for(int i = 4; i < tokens.size(); i++) {
+            // Extract values inside the parentheses: VALUES ( val1, val2 )
+            int valuesIndex = tokens.indexOf("VALUES");
+            List<String> valuesToInsert = new ArrayList<>();
+            for (int i = valuesIndex + 2; i < tokens.size() - 1; i++) {
                 String token = tokens.get(i);
-                if (token.equals("(")) {
-                    insideBrackets = true;
-                    continue;
-                }
-                if (token.equals(")")) {
-                    break;
-                }
-                if (insideBrackets) {
-                    if (!token.equals(",")) {
-                        row.addValue(token);
-                    }
+                if (!token.equals(",")) {
+                    valuesToInsert.add(token.replace("'","").trim());
                 }
             }
-            myTable.addRow(row);
 
-            String dbFolderPath = this.storageFolderPath + File.separator + this.currentDatabase;
-            myTable.saveToFile(dbFolderPath);
+            // Schema Validation: Check if value count matches column count (excluding ID)
+            // Assuming the first column is always the auto-generated 'id'
+            if (valuesToInsert.size() != myTable.getColumnNames().size() - 1 ) {
+                return "[ERROR] Number of values does not match the number of columns.";
+            }
+
+            // Create new Row and use OOP to generate ID
+            Row newRow = new Row();
+            newRow.addValue(String.valueOf(myTable.getNextId()));
+
+            for (String val :  valuesToInsert) {
+                newRow.addValue(val);
+            }
+
+            // Update domain model and persist to disk
+            myTable.addRow(newRow);
+            saveTableToFile(myTable);
+
             return "[OK]";
+        } catch (RuntimeException e) {
+            return e.getMessage();
         } catch (Exception e) {
             return "[ERROR] Failed to insert table: " + e.getMessage();
         }
+
 
     }
 
@@ -334,43 +343,55 @@ public class DBServer {
 
     }
 
+    /**
+     * Handles the DELETE FROM command to remove records matching specific conditions.
+     * Implements a reverse-iteration strategy (i--) to safely remove elements from
+     * the dynamic ArrayList without triggering index-shifting anomalies.
+     *
+     * @param tokens The tokenized SQL command list.
+     * @return A success message [OK] or an error string.
+     */
     private String handleDelete(List<String> tokens) throws IOException {
-        if (tokens.size() < 7) {
-            return "[ERROR] Invalid DELETE command format or missing WHERE clause";
+        if (tokens.size() < 3 || !tokens.get(1).equalsIgnoreCase("FROM")) {
+            return "[ERROR] Invalid DELETE command syntax";
         }
         if (this.currentDatabase == null || this.currentDatabase.isEmpty()) {
             return "[ERROR] You must USE a database first";
         }
-
-        String tableName = tokens.get(2);
-
         try {
+            String tableName = tokens.get(2);
             Table myTable = loadTableFromFile(tableName);
 
-            if (!tokens.get(3).equalsIgnoreCase("WHERE")) {
-                return "[ERROR] DELETE command must contain a WHERE clause";
-            }
-            String targetDeleteColumn = tokens.get(4);
-            String operator = tokens.get(5);
+            // Locate and extract WHERE conditions
+            int whereIndex = tokens.indexOf("WHERE");
+            boolean hasWhere = (whereIndex != -1);
+            List<String> conditionTokens = new ArrayList<>();
 
-            String targetDeleteValue = tokens.get(6).replace("'", "").replace(";", "").trim();
-
-            for(int i = myTable.getRows().size() -1; i >= 0; i--) {
-                Row row = myTable.getRows().get(i);
-                try {
-                    if (checkCondition(row, myTable, targetDeleteColumn, operator, targetDeleteValue)) {
-                        myTable.getRows().remove(i);
-                    }
-                } catch (RuntimeException e) {
-                    return e.getMessage();
+            if (hasWhere) {
+                for (int i = whereIndex + 1; i < tokens.size(); i++) {
+                    String t = tokens.get(i).replace(";","");
+                    if (!t.isEmpty()) conditionTokens.add(t);
                 }
             }
-            myTable.saveToFile(this.storageFolderPath + File.separator + this.currentDatabase);
 
-            return "[OK]";
+            // Reverse Iteration Deletion (Crucial for ArrayList stability)
+            List<Row> rows = myTable.getRows();
+            for (int i = rows.size() - 1; i >= 0; i--) {
+                Row row = rows.get(i);
+                boolean shouldDelete = !hasWhere || evaluateCondition(row, myTable, conditionTokens);
+
+                if (shouldDelete) rows.remove(i);
+            }
+
+            // Persist changes
+            saveTableToFile(myTable);
+            return "[OK]\n";
+        } catch (RuntimeException e) {
+            return e.getMessage();
         } catch (Exception e) {
             return "[ERROR] Failed to delete: " + e.getMessage();
         }
+
     }
 
     private String handleAlter(List<String> tokens) {
@@ -578,47 +599,26 @@ public class DBServer {
         }
     }
 
-    private boolean checkCondition(Row row, Table table, String columnName, String operator, String targetValue) {
-        int colIndex = table.getColumnNames().indexOf(columnName);
-        if (colIndex == -1) {
-            throw new RuntimeException("[ERROR] Column " + columnName + " does not exist");
-        }
-        String cellValue = row.getValues().get(colIndex).replace("'","").trim();
-        if (operator.equals("==")) {
-            return cellValue.equals(targetValue);
-        } else if (operator.equals("!=")) {
-            return !cellValue.equals(targetValue);
-        } else if (operator.equals(">") ||
-                operator.equals(">=") ||
-                operator.equals("<") ||
-                operator.equals("<=")) {
-            try {
-                float cellNum = Float.parseFloat(cellValue);
-                float targetNum = Float.parseFloat(targetValue);
-                switch (operator) {
-                    case ">": return cellNum > targetNum;
-                    case "<": return cellNum < targetNum;
-                    case ">=": return cellNum >= targetNum;
-                    case "<=": return cellNum <= targetNum;
-                }
-            }catch (NumberFormatException e) {
-                throw new RuntimeException("[ERROR] Cannot use math operators on non-number values");
-            }
-        } else if (operator.equalsIgnoreCase("LIKE")) {
-            return cellValue.contains(targetValue);
-        }
-
-        throw new RuntimeException("[ERROR] Unknown operator: " + operator);
-    }
-
+    /**
+     * Recursively evaluates complex boolean conditions (AST parsing).
+     * Handles nested parentheses, AND/OR logical operators, and base conditions.
+     *
+     * @param row The current database row being evaluated.
+     * @param table The table metadata used to resolve column indices.
+     * @param condTokens The tokenized WHERE clause condition.
+     * @return true if the row satisfies the condition, false otherwise.
+     * @throws RuntimeException if the condition syntax is invalid.
+     */
     private boolean evaluateCondition(Row row, Table table, List<String> condTokens) {
-        if (condTokens.isEmpty() || condTokens == null) {
-            throw new RuntimeException("Empty condition");
+        if (condTokens == null || condTokens.isEmpty()) {
+            throw new RuntimeException("[ERROR] Empty condition provided.");
         }
+
         int bracketDepth = 0;
         int mainOpIndex = -1;
         String mainOp = "";
 
+        // Locate the top-level logical operator (AND/ OR) outside of any brackets
         for (int i = 0; i < condTokens.size(); i++) {
             String token = condTokens.get(i);
             if (token.equals("(")) {
@@ -633,34 +633,79 @@ public class DBServer {
             }
         }
 
-        if  (mainOpIndex != -1) {
+        // Recursive splitting if a top-level operator is found
+        if (mainOpIndex != -1) {
             List<String> leftTokens = condTokens.subList(0, mainOpIndex);
             List<String> rightTokens = condTokens.subList(mainOpIndex + 1, condTokens.size());
 
             boolean leftResult = evaluateCondition(row, table, leftTokens);
             boolean rightResult = evaluateCondition(row, table, rightTokens);
 
-            if (mainOp.equals("AND")) {
-                return leftResult && rightResult;
-            } else  {
-                return leftResult || rightResult;
-            }
+            return mainOp.equals("AND") ? (leftResult && rightResult) : (leftResult || rightResult);
         }
 
-        if (condTokens.get(0).equals("(") &&
-                condTokens.get(condTokens.size() - 1).equals(")")
-        ) {
-            return evaluateCondition(row, table, condTokens.subList(1, condTokens.size() - 1));
+        // Strip wrapping parentheses if the whole expression is enclosed
+        if (condTokens.get(0).equals("(") && condTokens.get(condTokens.size() - 1).equals(")")) {
+            return evaluateCondition(row, table, condTokens.subList(1, condTokens.size()-1));
         }
 
+        // Base Case: Evaluate simple condition triplet (Column, Operator, Value)
         if (condTokens.size() == 3) {
-            String col = condTokens.get(0);
-            String op =  condTokens.get(1);
-            String val = condTokens.get(2).replace("'","").trim();
-
+            String col =  condTokens.get(0);
+            String op = condTokens.get(1);
+            String val = condTokens.get(2); // String iteral cleaning is delegated to checkCondtion
             return checkCondition(row, table, col, op, val);
         }
-        throw new RuntimeException("Invalid condition syntax: " + String.join(" ",condTokens));
+
+        throw new RuntimeException("[ERROR] Invalid condition syntax: " + String.join(" ", condTokens));
+    }
+
+    /**
+     * Evaluates a base condition (e.g., age > 20) against a specific row.
+     * Utilizes encapsulated Table and Row methods to prevent tight coupling.
+     *
+     * @param row The current row being checked.
+     * @param table The table object for schema reference.
+     * @param columnName The column to check against.
+     * @param operator The comparative operator (==, !=, > LIKE, etc.)
+     * @param targetValue The value to compare with.
+     * @return true if the condition holds, false otherwise,
+     */
+    private boolean checkCondition(Row row, Table table, String columnName, String operator, String targetValue) {
+        // Delegate index resolution to the Table class (Decoupling)
+        int colIndex = table.getColumnIndexOrThrow(columnName);
+
+        // Delegate data extraction to the Row class, but clean the target here
+        String cellValue = row.getCleanValueAt(colIndex);
+        String cleanTarget = targetValue.replace("'","").trim();
+
+        switch (operator.toUpperCase()) {
+            case "==":
+                return cellValue.equals(cleanTarget);
+            case "!=":
+                return !cellValue.equals(cleanTarget);
+            case "LIKE":
+                return cellValue.contains(cleanTarget);
+            case ">":
+            case ">=":
+            case "<":
+            case "<=":
+                try {
+                    float cellNum = Float.parseFloat(cellValue);
+                    float targetNum = Float.parseFloat(targetValue);
+                    switch (operator) {
+                        case ">": return cellNum > targetNum;
+                        case "<": return cellNum < targetNum;
+                        case "<=": return cellNum <= targetNum;
+                        case ">=": return cellNum >= targetNum;
+                        default: return false;
+                    }
+                } catch (NumberFormatException e) {
+                    throw new RuntimeException("[ERROR] Cannot use math operators on non-number values");
+                }
+            default:
+                throw new RuntimeException("[ERROR] Unknown operator: " + operator);
+        }
     }
 
     private void saveTableToFile(Table tableToSave) {
