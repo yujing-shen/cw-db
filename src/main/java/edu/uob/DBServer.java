@@ -360,54 +360,62 @@ public class DBServer {
     }
 
     /**
-     * Handles the DELETE FROM command to remove records matching specific conditions.
-     * Implements a reverse-iteration strategy (i--) to safely remove elements from
-     * the dynamic ArrayList without triggering index-shifting anomalies.
+     * Handles the DELETE command to remove specific rows from a table.
+     * Enforces the presence of a WHERE clause to prevent accidental mass deletion.
+     * Utilizes reverse iteration to safely remove elements from the ArrayList.
      *
      * @param tokens The tokenized SQL command list.
      * @return A success message [OK] or an error string.
      */
-    private String handleDelete(List<String> tokens) throws IOException {
+    private String handleDelete(List<String> tokens) {
         if (tokens.size() < 3 || !tokens.get(1).equalsIgnoreCase("FROM")) {
-            return "[ERROR] Invalid DELETE command syntax";
+            return "[ERROR] Invalid DELETE command syntax.";
         }
         if (this.currentDatabase == null || this.currentDatabase.isEmpty()) {
-            return "[ERROR] You must USE a database first";
+            return "[ERROR] No database selected. You must USE a database first.";
         }
+
         try {
-            String tableName = tokens.get(2);
+            String tableName = tokens.get(2).replace(";", "");
             Table myTable = loadTableFromFile(tableName);
 
             // Locate and extract WHERE conditions
             int whereIndex = tokens.indexOf("WHERE");
-            boolean hasWhere = (whereIndex != -1);
-            List<String> conditionTokens = new ArrayList<>();
 
-            if (hasWhere) {
-                for (int i = whereIndex + 1; i < tokens.size(); i++) {
-                    String t = tokens.get(i).replace(";","");
-                    if (!t.isEmpty()) conditionTokens.add(t);
-                }
+            // 🚨 CRITICAL FIX: The test strictly requires a WHERE clause for DELETE!
+            // Without it, we risk deleting all rows (Truncate), which is forbidden by the test.
+            if (whereIndex == -1) {
+                return "[ERROR] DELETE command must include a WHERE clause to prevent accidental data loss.";
             }
 
-            // Reverse Iteration Deletion (Crucial for ArrayList stability)
+            List<String> conditionTokens = new ArrayList<>();
+            for (int i = whereIndex + 1; i < tokens.size(); i++) {
+                String t = tokens.get(i).replace(";", "");
+                if (!t.isEmpty()) conditionTokens.add(t);
+            }
+
+            // Reverse Iteration Deletion (Crucial for ArrayList stability when removing)
             List<Row> rows = myTable.getRows();
             for (int i = rows.size() - 1; i >= 0; i--) {
                 Row row = rows.get(i);
-                boolean shouldDelete = !hasWhere || evaluateCondition(row, myTable, conditionTokens);
 
-                if (shouldDelete) rows.remove(i);
+                // We delegate the logical checking to our AST parser.
+                // If it evaluates to true, the row meets the criteria for deletion.
+                if (evaluateCondition(row, myTable, conditionTokens)) {
+                    rows.remove(i);
+                }
             }
 
-            // Persist changes
+            // Persist the modified state to the disk
             saveTableToFile(myTable);
             return "[OK]\n";
+
         } catch (RuntimeException e) {
+            // Catches exceptions thrown by loadTableFromFile or evaluateCondition (e.g. column not found)
             return e.getMessage();
         } catch (Exception e) {
-            return "[ERROR] Failed to delete: " + e.getMessage();
+            return "[ERROR] Failed to execute DELETE: " + e.getMessage();
         }
-
     }
 
     private String handleAlter(List<String> tokens) {
@@ -456,10 +464,20 @@ public class DBServer {
         }
     }
 
-    // UPDATE student SET age = 26 WHERE name == 'Alice' ;
-    private String handleUpdate(List<String> tokens) throws IOException {
-        if (tokens.size() < 6 || !tokens.contains("SET")) return "[ERROR] Invalid UPDATE syntax";
-        if (this.currentDatabase == null || this.currentDatabase.isEmpty()) return "[ERROR] You must USE a database first";
+    /**
+     * Handles the UPDATE command to modify existing records in a table.
+     * Includes security checks to prevent modification of the protected 'id' primary key.
+     *
+     * @param tokens The tokenized SQL command list.
+     * @return A success message [OK] or an error string.
+     */
+    private String handleUpdate(List<String> tokens) {
+        if (tokens.size() < 6 || !tokens.contains("SET")) {
+            return "[ERROR] Invalid UPDATE command syntax.";
+        }
+        if (this.currentDatabase == null || this.currentDatabase.isEmpty()) {
+            return "[ERROR] No database selected. You must USE a database first.";
+        }
 
         try {
             String tableName = tokens.get(1);
@@ -469,40 +487,52 @@ public class DBServer {
             int setIndex = tokens.indexOf("SET");
             int whereIndex = tokens.indexOf("WHERE");
             boolean hasWhere = (whereIndex != -1);
-            int endOfSet = hasWhere ? whereIndex : tokens.size();
 
-            // Extract the target column and new value (Assuming standard format: SET column = 'value')
+            // Extract the target column and new value (Format: SET column = 'value')
             String targetCol = tokens.get(setIndex + 1);
+
+            // CRITICAL SECURITY FIX: Prevent users from manually updating the auto-generated ID!
+            // The 'id' column is a protected primary key managed solely by the database engine.
+            if (targetCol.equalsIgnoreCase("id")) {
+                return "[ERROR] The 'id' column is a protected primary key and cannot be updated manually.";
+            }
+
             String newValue = tokens.get(setIndex + 3).replace("'", "").trim();
 
-            // Delegate index resolution to the Table class
+            // Delegate index resolution to the Table class.
+            // This will safely throw an exception if the column doesn't exist.
             int targetColIndex = myTable.getColumnIndexOrThrow(targetCol);
 
             // Extract condition tokens if a WHERE clause exists
             List<String> conditionTokens = new ArrayList<>();
             if (hasWhere) {
                 for (int i = whereIndex + 1; i < tokens.size(); i++) {
-                    String t = tokens.get(i).replace(";","");
+                    String t = tokens.get(i).replace(";", "");
                     if (!t.isEmpty()) conditionTokens.add(t);
                 }
             }
 
             // Iterate through rows and apply the update
             for (Row row : myTable.getRows()) {
-                // If no WHERE clause, update all. Otherwise, ask the AST parser.
+                // Determine if the current row matches the WHERE condition (or if there is no WHERE)
                 boolean shouldUpdate = !hasWhere || evaluateCondition(row, myTable, conditionTokens);
 
                 if (shouldUpdate) {
-                    // Delegate the data mutation to the Row class
+                    // Delegate the actual data mutation to the Row class
                     row.updateValueAt(targetColIndex, newValue);
                 }
             }
+
+            // Persist the modified state back to the hard drive
             saveTableToFile(myTable);
             return "[OK]\n";
-        } catch (Exception e) {
-            return "[ERROR] Failed to update table: " + e.getMessage();
-        }
 
+        } catch (RuntimeException e) {
+            // Catches getColumnIndexOrThrow and evaluateCondition errors
+            return e.getMessage();
+        } catch (Exception e) {
+            return "[ERROR] Failed to execute UPDATE: " + e.getMessage();
+        }
     }
 
     /**
