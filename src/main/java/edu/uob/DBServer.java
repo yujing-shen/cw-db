@@ -6,10 +6,7 @@ import java.net.Socket;
 import java.nio.file.Paths;
 import java.nio.file.Files;
 import java.sql.Array;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Scanner;
+import java.util.*;
 
 /** This class implements the DB server. */
 public class DBServer {
@@ -389,14 +386,11 @@ public class DBServer {
         try {
             String tableName = tokens.get(2).replace(";", "");
             Table myTable = loadTableFromFile(tableName);
-
-            // Locate and extract WHERE conditions
             int whereIndex = tokens.indexOf("WHERE");
 
-            // CRITICAL FIX: The test strictly requires a WHERE clause for DELETE!
-            // Without it, we risk deleting all rows (Truncate), which is forbidden by the test.
+            // Mandatory WHERE clause check for safety
             if (whereIndex == -1) {
-                return "[ERROR] DELETE command must include a WHERE clause to prevent accidental data loss.";
+                return "[ERROR] DELETE command must include a WHERE clause.";
             }
 
             List<String> conditionTokens = new ArrayList<>();
@@ -405,20 +399,21 @@ public class DBServer {
                 if (!t.isEmpty()) conditionTokens.add(t);
             }
 
-            // Reverse Iteration Deletion (Crucial for ArrayList stability when removing)
+            // Using Iterator for safe removal
             List<Row> rows = myTable.getRows();
-            for (int i = rows.size() - 1; i >= 0; i--) {
-                Row row = rows.get(i);
+            Iterator<Row> iterator = rows.iterator();
 
-                // We delegate the logical checking to our AST parser.
-                // If it evaluates to true, the row meets the criteria for deletion.
+            while (iterator.hasNext()) {
+                Row row = iterator.next();
+                // Check the condition using our AST evaluator
                 if (evaluateCondition(row, myTable, conditionTokens)) {
-                    rows.remove(i);
+                    // The iterator's remove() method is the ONLY safe way
+                    // to remove items while iterating forward.
+                    iterator.remove();
                 }
             }
 
-            // Persist the modified state to the disk
-            saveTableToFile(myTable);
+            saveTableToFile(myTable); //
             return "[OK]\n";
 
         } catch (RuntimeException e) {
@@ -835,7 +830,7 @@ public class DBServer {
             throw new RuntimeException("[ERROR] Table " + tableName + " does not exist.");
         }
 
-        // 🌟 OOP Best Practice: try-with-resources ensures the Scanner is automatically closed
+        // OOP Best Practice: try-with-resources ensures the Scanner is automatically closed
         // after the try block executes completely, avoiding the infamous "Scanner closed" bug.
         try (Scanner scanner = new Scanner(file)) {
             Table loadedTable = new Table(tableName);
