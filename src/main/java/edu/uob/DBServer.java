@@ -54,11 +54,11 @@ public class DBServer {
 
         // check if the single quotes are double
         int singleQuoteCount = trimmedCommand.length() - trimmedCommand.replace("'","").length();
-        if (singleQuoteCount % 2 != 0) return "[ERROR] Unclosed single quote.";
+        if (singleQuoteCount % 2 != 0) return "[ERROR] Unclosed single quotes.";
 
         // check if the double quotes are single
         int doubleQuoteCount = trimmedCommand.length() - trimmedCommand.replace("\"","").length();
-        if (doubleQuoteCount % 2 != 0) return "[ERROR] Unclosed double quote.";
+        if (doubleQuoteCount % 2 != 0) return "[ERROR] Unclosed double quotes.";
 
         // check if the brackets are double
         int openBrackets = trimmedCommand.length() - trimmedCommand.replace("(", "").length();
