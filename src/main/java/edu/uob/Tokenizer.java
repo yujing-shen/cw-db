@@ -9,7 +9,9 @@ public class Tokenizer {
 
     public List<String> parseTokens(String query) {
         List<String> tokens = new ArrayList<>();
-        query = query.trim(); // delete the space in the start and end
+        
+        // delete the space in the start and end
+        query = query.trim(); 
 
         // protect ' String constant
         String[] fragments = query.split("'");
