@@ -70,15 +70,24 @@ public class DatabaseEngine {
         }
     }
 
+    /**
+     * Switches the engine's active databse to an existing folder.
+     * Does not read or write any table files; only updates {@code currentDatabase} in memory.
+     * 
+     * @param tokens token list from Tokenizer, e.g. ["USE", "university", ";"]
+     * @return "[OK]" if the database directory exists, otherwise an [ERROR] message
+     */
     private String handleUse(List<String> tokens) {
         if (tokens.size() < 2) {
             return "[ERROR] Invalid USE command";
         }
 
         String dbName = tokens.get(1);
+        // Path to databases/<dbName>/ - File object only describes the path until exists is called
         File dbFolder = new File(storageFolderPath + File.separator + dbName);
 
         if (dbFolder.exists() && dbFolder.isDirectory()) {
+            // Remember which database subsequent CREATE TABLE / INSERT / SELECT apply to
             this.currentDatabase = dbName;
             return "[OK]";
         } else {
