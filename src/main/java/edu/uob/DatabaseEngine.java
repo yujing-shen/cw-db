@@ -96,6 +96,16 @@ public class DatabaseEngine {
     }
 
     /**
+     * @return {@code null} when a database is selected; otherwise an {@code [ERROR]} message
+     */
+    private String requireCurrentDatabase() {
+        if (this.currentDatabase == null || this.currentDatabase.isEmpty()) {
+            return "[ERROR] No database selected. You must USE a database first.";
+        }
+        return null;
+    }
+
+    /**
      * Handles CREATE DATABASE and CREATE TABLE.
      *
      * <p>For CREATE DATABASE, this method creates a directory under the storage root.
@@ -122,8 +132,9 @@ public class DatabaseEngine {
                 return "[OK]\n";
 
             } else if (createType.equals("TABLE")) {
-                if (this.currentDatabase == null || this.currentDatabase.isEmpty()) {
-                    return "[ERROR] No database selected. Please USE a database first.";
+                String dbError = requireCurrentDatabase();
+                if (dbError != null) {
+                    return dbError;
                 }
 
                 // CREATE TABLE requires a selected DB and a non-existing target file
@@ -199,8 +210,9 @@ public class DatabaseEngine {
         if (tokens.size() < 7 || !tokens.get(1).equalsIgnoreCase("INTO") || !hasValues) {
             return "[ERROR] Invalid INSERT command syntax.";
         }
-        if (this.currentDatabase == null || this.currentDatabase.isEmpty()) {
-            return "[ERROR] No database selected. You must USE a database first.";
+        String dbError = requireCurrentDatabase();
+        if (dbError != null) {
+            return dbError;
         }
 
         try {
@@ -272,8 +284,9 @@ public class DatabaseEngine {
      */
     private String handleSelect(List<String> tokens) {
         if (tokens.size() < 4) return "[ERROR] Invalid SELECT command length";
-        if (this.currentDatabase == null || this.currentDatabase.isEmpty()) {
-            return "[ERROR] You must USE a database first";
+        String dbError = requireCurrentDatabase();
+        if (dbError != null) {
+            return dbError;
         }
 
         try {
@@ -368,8 +381,9 @@ public class DatabaseEngine {
         String targetObjectName = tokens.get(1).toUpperCase();
 
         if (targetObjectName.equals("TABLE")) {
-            if (this.currentDatabase == null || this.currentDatabase.isEmpty()) {
-                return "[ERROR] You must USE a database first";
+            String dbError = requireCurrentDatabase();
+            if (dbError != null) {
+                return dbError;
             }
             String tableName = tokens.get(2);
             String tablePath = this.storageFolderPath + File.separator + this.currentDatabase + File.separator + tableName + ".tab";
@@ -416,8 +430,9 @@ public class DatabaseEngine {
         if (tokens.size() < 3 || !tokens.get(1).equalsIgnoreCase("FROM")) {
             return "[ERROR] Invalid DELETE command syntax.";
         }
-        if (this.currentDatabase == null || this.currentDatabase.isEmpty()) {
-            return "[ERROR] No database selected. You must USE a database first.";
+        String dbError = requireCurrentDatabase();
+        if (dbError != null) {
+            return dbError;
         }
 
         try {
@@ -465,8 +480,9 @@ public class DatabaseEngine {
         if (tokens.size() < 5) {
             return "[ERROR] Invalid ALTER command length";
         }
-        if (this.currentDatabase == null || this.currentDatabase.isEmpty()) {
-            return "[ERROR] You must USE a database first";
+        String dbError = requireCurrentDatabase();
+        if (dbError != null) {
+            return dbError;
         }
 
         String tableName = tokens.get(2);
@@ -518,8 +534,9 @@ public class DatabaseEngine {
         if (tokens.size() < 6 || !tokens.contains("SET")) {
             return "[ERROR] Invalid UPDATE command syntax.";
         }
-        if (this.currentDatabase == null || this.currentDatabase.isEmpty()) {
-            return "[ERROR] No database selected. You must USE a database first.";
+        String dbError = requireCurrentDatabase();
+        if (dbError != null) {
+            return dbError;
         }
 
         try {
@@ -594,8 +611,9 @@ public class DatabaseEngine {
                 !tokens.get(6).equalsIgnoreCase("AND"))  {
             return "[ERROR] Invalid JOIN syntax";
         }
-        if (this.currentDatabase == null || this.currentDatabase.isEmpty()) {
-            return "[ERROR] You must USE a database first";
+        String dbError = requireCurrentDatabase();
+        if (dbError != null) {
+            return dbError;
         }
 
         try {
