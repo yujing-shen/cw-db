@@ -71,23 +71,35 @@ public class DatabaseEngine {
     }
 
     /**
-     * Switches the engine's active databse to an existing folder.
-     * Does not read or write any table files; only updates {@code currentDatabase} in memory.
-     * 
+     * Handles the USE command — switches the engine's active database context.
+     *
+     * <p>This method only updates the in-memory {@code currentDatabase} field;
+     * it does not read or write any table files. All subsequent DDL/DML operations
+     * (e.g. CREATE TABLE, INSERT, SELECT) will target this database until
+     * another USE command is issued.</p>
+     *
+     * <p>Validation rules:</p>
+     * <ul>
+     *   <li>Token count must be at least 2 (keyword + database name).</li>
+     *   <li>The target directory must exist under the storage root and be a directory.</li>
+     * </ul>
+     *
      * @param tokens token list from Tokenizer, e.g. ["USE", "university", ";"]
-     * @return "[OK]" if the database directory exists, otherwise an [ERROR] message
+     * @return "[OK]" on success, or "[ERROR] ..." if the database does not exist
+     *         or the command syntax is invalid
      */
     private String handleUse(List<String> tokens) {
+        // Guard: ensure the command includes a database name argument
         if (tokens.size() < 2) {
             return "[ERROR] Invalid USE command";
         }
 
         String dbName = tokens.get(1);
-        // Path to databases/<dbName>/ - File object only describes the path until exists is called
+        // Construct the path: <storageRoot>/<dbName>/
         File dbFolder = new File(storageFolderPath + File.separator + dbName);
 
         if (dbFolder.exists() && dbFolder.isDirectory()) {
-            // Remember which database subsequent CREATE TABLE / INSERT / SELECT apply to
+            // Persist the selection so that later commands resolve against this database
             this.currentDatabase = dbName;
             return "[OK]";
         } else {
@@ -283,6 +295,7 @@ public class DatabaseEngine {
      * @return A formatted string of the queried data or an error message.
      */
     private String handleSelect(List<String> tokens) {
+        
         if (tokens.size() < 4) return "[ERROR] Invalid SELECT command length";
         String dbError = requireCurrentDatabase();
         if (dbError != null) {
