@@ -604,13 +604,32 @@ public class DatabaseEngine {
     }
 
     /**
-     * Handles the UPDATE command to modify existing records in a table.
-     * Includes security checks to prevent modification of the protected 'id' primary key.
+     * Handles the UPDATE command — modifies a single column in rows that match a WHERE condition.
      *
-     * @param tokens The tokenized SQL command list.
-     * @return A success message [OK] or an error string.
+     * <p>Workflow:</p>
+     * <ol>
+     *   <li>Validate syntax ({@code UPDATE &lt;table&gt; SET &lt;col&gt; = &lt;val&gt;}) and require an active database context.</li>
+     *   <li>Load the target table from disk via {@link StorageManager}.</li>
+     *   <li>Locate the SET and WHERE keyword boundaries in the token list.</li>
+     *   <li>Reject any attempt to update the protected {@code id} primary key.</li>
+     *   <li>Resolve the target column index via {@link Table#getColumnIndexOrThrow}.</li>
+     *   <li>Optionally extract WHERE condition tokens for row filtering.</li>
+     *   <li>Iterate over all rows; update those satisfying the condition (or all rows if no WHERE).</li>
+     *   <li>Persist the updated table back to disk.</li>
+     * </ol>
+     *
+     * <p>Design note: unlike {@link #handleDelete}, WHERE is <b>optional</b> here —
+     * omitting it causes every row in the table to be updated.</p>
+     *
+     * <p>Design note: only a single column assignment per UPDATE is supported
+     * ({@code SET col = val}); multi-column updates are not implemented.</p>
+     *
+     * @param tokens tokenized command list,
+     *               e.g. ["UPDATE", "students", "SET", "age", "=", "26", "WHERE", "name", "==", "'Alice'", ";"]
+     * @return "[OK]" on success, or "[ERROR] ..." if validation fails or an exception is thrown
      */
     private String handleUpdate(List<String> tokens) {
+        // Guard: must have at least UPDATE + table + SET + col + = + val, and SET must be present
         if (tokens.size() < 6 || !tokens.contains("SET")) {
             return "[ERROR] Invalid UPDATE command syntax.";
         }
@@ -623,27 +642,26 @@ public class DatabaseEngine {
             String tableName = tokens.get(1);
             Table myTable = this.storageManager.loadTable(this.currentDatabase, tableName);
 
-            // Locate boundaries for SET and WHERE clauses
+            // Locate the SET and WHERE keyword boundaries
             int setIndex = tokens.indexOf("SET");
             int whereIndex = tokens.indexOf("WHERE");
             boolean hasWhere = (whereIndex != -1);
 
-            // Extract the target column and new value (Format: SET column = 'value')
+            // Extract target column name from the SET clause (format: SET <col> = <val>)
             String targetCol = tokens.get(setIndex + 1);
 
-            // CRITICAL SECURITY FIX: Prevent users from manually updating the auto-generated ID!
-            // The 'id' column is a protected primary key managed solely by the database engine.
+            // Security: the 'id' primary key is auto-managed and must never be modified by users
             if (targetCol.equalsIgnoreCase("id")) {
                 return "[ERROR] The 'id' column is a protected primary key and cannot be updated manually.";
             }
 
+            // Extract and clean the new value (tokens[setIndex+2] is '=', tokens[setIndex+3] is the value)
             String newValue = tokens.get(setIndex + 3).replace("'", "").trim();
 
-            // Delegate index resolution to the Table class.
-            // This will safely throw an exception if the column doesn't exist.
+            // Resolve column index; throws IllegalArgumentException if the column does not exist
             int targetColIndex = myTable.getColumnIndexOrThrow(targetCol);
 
-            // Extract condition tokens if a WHERE clause exists
+            // Extract WHERE condition tokens if present
             List<String> conditionTokens = new ArrayList<>();
             if (hasWhere) {
                 for (int i = whereIndex + 1; i < tokens.size(); i++) {
@@ -652,23 +670,22 @@ public class DatabaseEngine {
                 }
             }
 
-            // Iterate through rows and apply the update
+            // Short-circuit: update all rows if no WHERE, or only matching rows if WHERE is present
             for (Row row : myTable.getRows()) {
-                // Determine if the current row matches the WHERE condition (or if there is no WHERE)
                 boolean shouldUpdate = !hasWhere || this.evaluator.evaluate(row, myTable, conditionTokens);
 
                 if (shouldUpdate) {
-                    // Delegate the actual data mutation to the Row class
+                    // Delegate the actual value mutation to the Row class
                     row.updateValueAt(targetColIndex, newValue);
                 }
             }
 
-            // Persist the modified state back to the hard drive
+            // Persist the modified table back to disk
             this.storageManager.saveTable(this.currentDatabase, myTable);
             return "[OK]\n";
 
         } catch (RuntimeException e) {
-            // Catches getColumnIndexOrThrow and evaluateCondition errors
+            // Catches getColumnIndexOrThrow and condition evaluation errors
             return e.getMessage();
         } catch (Exception e) {
             return "[ERROR] Failed to execute UPDATE: " + e.getMessage();
