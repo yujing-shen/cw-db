@@ -518,6 +518,7 @@ public class DatabaseEngine {
         if (tokens.size() < 5) {
             return "[ERROR] Invalid ALTER command length";
         }
+        
         String dbError = requireCurrentDatabase();
         if (dbError != null) {
             return dbError;
