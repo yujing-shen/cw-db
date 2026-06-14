@@ -457,14 +457,30 @@ public class DatabaseEngine {
     }
 
     /**
-     * Handles the DELETE command to remove specific rows from a table.
-     * Enforces the presence of a WHERE clause to prevent accidental mass deletion.
-     * Utilizes reverse iteration to safely remove elements from the ArrayList.
+     * Handles the DELETE command — removes rows from a table that match a WHERE condition.
      *
-     * @param tokens The tokenized SQL command list.
-     * @return A success message [OK] or an error string.
+     * <p>Workflow:</p>
+     * <ol>
+     *   <li>Validate syntax ({@code DELETE FROM &lt;table&gt;}) and require an active database context.</li>
+     *   <li>Load the target table from disk via {@link StorageManager}.</li>
+     *   <li>Enforce the mandatory WHERE clause to prevent accidental mass deletion.</li>
+     *   <li>Extract condition tokens and delegate evaluation to {@link ConditionEvaluator}.</li>
+     *   <li>Remove matching rows using {@link Iterator#remove()} for safe in-place mutation.</li>
+     *   <li>Persist the updated table back to disk.</li>
+     * </ol>
+     *
+     * <p>Design note: a WHERE clause is required by design — unlike standard SQL which permits
+     * a WHERE-less DELETE, this engine rejects it to guard against accidental full-table wipes.</p>
+     *
+     * <p>Design note: {@link Iterator#remove()} is used instead of a regular for-each loop
+     * because removing from an {@link java.util.ArrayList} while iterating directly would
+     * throw a {@link java.util.ConcurrentModificationException}.</p>
+     *
+     * @param tokens tokenized command list, e.g. ["DELETE", "FROM", "students", "WHERE", "age", ">", "20", ";"]
+     * @return "[OK]" on success, or "[ERROR] ..." if validation fails or an exception is thrown
      */
     private String handleDelete(List<String> tokens) {
+        // Guard: must have DELETE + FROM + tableName, and FROM keyword must be present
         if (tokens.size() < 3 || !tokens.get(1).equalsIgnoreCase("FROM")) {
             return "[ERROR] Invalid DELETE command syntax.";
         }
@@ -478,32 +494,33 @@ public class DatabaseEngine {
             Table myTable = storageManager.loadTable(this.currentDatabase, tableName);
             int whereIndex = tokens.indexOf("WHERE");
 
-            // Mandatory WHERE clause check for safety
+            // Mandatory WHERE clause — reject to prevent accidental full-table deletion
             if (whereIndex == -1) {
                 return "[ERROR] DELETE command must include a WHERE clause.";
             }
 
+            // Extract and clean condition tokens following WHERE
             List<String> conditionTokens = new ArrayList<>();
             for (int i = whereIndex + 1; i < tokens.size(); i++) {
                 String t = tokens.get(i).replace(";", "");
                 if (!t.isEmpty()) conditionTokens.add(t);
             }
 
-            // Using Iterator for safe removal
+            // Iterate with an explicit Iterator to allow safe in-place removal
             List<Row> rows = myTable.getRows();
             Iterator<Row> iterator = rows.iterator();
 
             while (iterator.hasNext()) {
                 Row row = iterator.next();
-                // Check the condition using our AST evaluator
+                // Delegate WHERE evaluation to the AST-based ConditionEvaluator
                 if (evaluator.evaluate(row, myTable, conditionTokens)) {
-                    // The iterator's remove() method is the ONLY safe way
-                    // to remove items while iterating forward.
+                    // iterator.remove() is the only safe way to remove during forward iteration
                     iterator.remove();
                 }
             }
 
-            storageManager.saveTable(this.currentDatabase, myTable); //
+            // Persist the post-deletion state back to disk
+            storageManager.saveTable(this.currentDatabase, myTable);
             return "[OK]\n";
 
         } catch (RuntimeException e) {
@@ -514,11 +531,29 @@ public class DatabaseEngine {
         }
     }
 
+    /**
+     * Handles the ALTER command — adds or removes a column from an existing table.
+     *
+     * <p>Two sub-commands are supported:</p>
+     * <ul>
+     *   <li>{@code ALTER TABLE <name> ADD <col>} — appends a new column to the schema
+     *       and backfills all existing rows with {@code "NULL"} to maintain data alignment.</li>
+     *   <li>{@code ALTER TABLE <name> DROP <col>} — removes the column definition and the
+     *       corresponding value from every row. The protected {@code id} column cannot be dropped.</li>
+     * </ul>
+     *
+     * <p>Design note: after mutation, the table is persisted via {@link Table#saveToFile(String)}
+     * instead of {@link StorageManager#saveTable}, which is a minor inconsistency with other handlers.</p>
+     *
+     * @param tokens tokenized command list, e.g. ["ALTER", "TABLE", "students", "ADD", "email", ";"]
+     * @return "[OK]" on success, or "[ERROR] ..." if validation fails or an I/O error occurs
+     */
     private String handleAlter(List<String> tokens) {
+        // Guard: minimum tokens required are ALTER + TABLE + TABLE_NAME + ADD/DROP + COLUMN_NAME
         if (tokens.size() < 5) {
             return "[ERROR] Invalid ALTER command length";
         }
-        
+
         String dbError = requireCurrentDatabase();
         if (dbError != null) {
             return dbError;
@@ -532,10 +567,12 @@ public class DatabaseEngine {
             String columnName = tokens.get(4);
 
             if (action.equals("ADD")) {
+                // Reject duplicate column names to keep the schema well-defined
                 if (myTable.getColumnNames().contains(columnName)) {
                     return "[ERROR] Column " + columnName + " already exists";
                 }
                 myTable.addColumnName(columnName);
+                // Backfill existing rows with NULL so that value count matches column count
                 for (Row row : myTable.getRows()) {
                     row.addValue("NULL");
                 }
@@ -543,9 +580,12 @@ public class DatabaseEngine {
             }else if (action.equals("DROP")) {
                 if (!myTable.getColumnNames().contains(columnName)) {
                     return "[ERROR] Column " + columnName + " does not exist";
-                } else if (columnName.equalsIgnoreCase("id")) {
+                } 
+                // The auto-generated ID column cannot be dropped
+                else if (columnName.equalsIgnoreCase("id")) {
                     return "[ERROR] Id cannot be deleted";
                 }
+                // Remove the column definition and the corresponding value from each row
                 int index = myTable.getColumnNames().indexOf(columnName);
                 myTable.getColumnNames().remove(index);
                 for (Row row : myTable.getRows()) {
@@ -554,6 +594,7 @@ public class DatabaseEngine {
             }else {
                 return "[ERROR] Invalid ALTER command (ONLY ADD or DROP)";
             }
+            // Persist the modified table back to the database folder
             String dbFolderPath = this.storageFolderPath + File.separator + this.currentDatabase;
             myTable.saveToFile(dbFolderPath);
             return "[OK]";
