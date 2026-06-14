@@ -693,67 +693,93 @@ public class DatabaseEngine {
     }
 
     /**
-     * Handles the JOIN command to combine rows from two tables bases on a related column.
+     * Handles the JOIN command — performs an inner join between two tables on a matching column.
      *
-     * @param tokens The tokenized SQL command list.
-     * @return A formatted string representation of the joined data.
+     * <p>Custom syntax (differs from standard SQL):</p>
+     * <pre>
+     *   JOIN &lt;table1&gt; AND &lt;table2&gt; ON &lt;col1&gt; AND &lt;col2&gt;
+     * </pre>
+     * <p>Token positions: [1]=table1, [2]=AND, [3]=table2, [4]=ON, [5]=col1, [6]=AND, [7]=col2</p>
+     *
+     * <p>Workflow:</p>
+     * <ol>
+     *   <li>Validate the minimum token count and keyword positions (AND/ON/AND).</li>
+     *   <li>Load both tables from disk via {@link StorageManager}.</li>
+     *   <li>Resolve the join-column indices via {@link Table#getColumnIndexOrThrow}.</li>
+     *   <li>Build the result header: a fresh {@code id} column followed by
+     *       {@code tableName.colName} prefixed columns from each table (original {@code id} excluded).</li>
+     *   <li>Execute a Nested Loop Join — O(N×M) — comparing every row pair;
+     *       emit a merged row when the ON-column values are equal.</li>
+     * </ol>
+     *
+     * <p>Design note: each matched row is assigned a new auto-incrementing {@code id}
+     * independent of either source table, avoiding primary-key collisions in the result view.</p>
+     *
+     * <p>Design note: the checks {@code if (index == -1)} after
+     * {@link Table#getColumnIndexOrThrow} are unreachable — the method throws before returning -1.
+     * They remain as defensive guards but have no runtime effect.</p>
+     *
+     * @param tokens tokenized command list,
+     *               e.g. ["JOIN", "students", "AND", "courses", "ON", "studentId", "AND", "id", ";"]
+     * @return a tab-separated result string starting with "[OK]\n", or "[ERROR] ..." on failure
      */
-    private  String handleJoin(List<String> tokens)  {
-        // Syntax expected: JOIN table1 AND table2 ON col1 AND col2
+    private String handleJoin(List<String> tokens) {
+        // Syntax: JOIN <table1> AND <table2> ON <col1> AND <col2> ;
         if (tokens.size() < 8) {
             return "[ERROR] Invalid JOIN command length";
         }
+        // Validate keyword positions: tokens[2]=AND, tokens[4]=ON, tokens[6]=AND
         if (!tokens.get(2).equalsIgnoreCase("AND") ||
                 !tokens.get(4).equalsIgnoreCase("ON") ||
-                !tokens.get(6).equalsIgnoreCase("AND"))  {
+                !tokens.get(6).equalsIgnoreCase("AND")) {
             return "[ERROR] Invalid JOIN syntax";
         }
+        
         String dbError = requireCurrentDatabase();
         if (dbError != null) {
             return dbError;
         }
 
         try {
-            // Extract table and column names
+            // Extract table names and ON column names from fixed token positions
             String table1Name = tokens.get(1);
             String table2Name = tokens.get(3);
             String col1Name = tokens.get(5);
             String col2Name = tokens.get(7);
 
-            // Load tables from disk
+            // Load both tables from disk
             Table table1 = this.storageManager.loadTable(this.currentDatabase, table1Name);
             Table table2 = this.storageManager.loadTable(this.currentDatabase, table2Name);
 
-            // Resolve column indices using OOP magic
+            // Resolve ON-column indices; getColumnIndexOrThrow throws if the column is not found
             int index1 = table1.getColumnIndexOrThrow(col1Name);
             int index2 = table2.getColumnIndexOrThrow(col2Name);
-            if (index1 == -1 ) {
+            // Note: checks below are unreachable — getColumnIndexOrThrow never returns -1
+            if (index1 == -1) {
                 return "[ERROR] Column " + col1Name + " does not exist";
             }
-            if (index2 == -1 ) {
+            if (index2 == -1) {
                 return "[ERROR] Column " + col2Name + " does not exist";
             }
 
-            // Initialize the result builder and build the unified header
+            // Build the result header: new id + table1 non-id columns + table2 non-id columns
             StringBuilder result = new StringBuilder();
             result.append("[OK]").append("\n");
-
-            // Builder the header: id | table1.col | table2.col
             result.append("id\t");
-            buildJoinHeader(result,table1);
+            buildJoinHeader(result, table1);
             buildJoinHeader(result, table2);
             result.append("\n");
 
-            // Nested Loop Join (The core engine of relational databases)
+            // Nested Loop Join O(N×M): compare every row pair from table1 and table2
             int joinIdCounter = 1;
 
-            for (Row r1: table1.getRows()) {
+            for (Row r1 : table1.getRows()) {
                 String matchVal1 = r1.getCleanValueAt(index1);
 
-                for (Row r2: table2.getRows()) {
+                for (Row r2 : table2.getRows()) {
                     String matchVal2 = r2.getCleanValueAt(index2);
 
-                    // If the ON condition holds, merge and append the rows
+                    // Emit a merged row when the ON-column values match
                     if (matchVal1.equals(matchVal2)) {
                         result.append(joinIdCounter++).append("\t");
                         buildJoinDataRow(result, table1, r1);
@@ -783,13 +809,18 @@ public class DatabaseEngine {
     }
 
     /**
-     * Helper method to append table headers with proper prefixes (e.g., table1.name)
-     * to avoid naming collisions in the merged JOIN view.
+     * Appends column headers for one table to the JOIN result, prefixed with the table name.
+     *
+     * <p>The {@code id} column is intentionally excluded because the JOIN result
+     * generates its own new auto-incrementing {@code id}; including the source
+     * {@code id} would cause ambiguity and redundancy in the output.</p>
+     *
+     * @param sb    the result builder to append to
+     * @param table the source table whose non-id columns are added as headers
      */
     private void buildJoinHeader(StringBuilder sb, Table table) {
         for (String colName : table.getColumnNames()) {
-            // Usually, the original 'id' columns are omitted in the joined output
-            // to avoid confusion with the newly generated join ID.
+            // Skip the original 'id' column to avoid confusion with the new join-generated id
             if (!colName.equalsIgnoreCase("id")) {
                 sb.append(table.getTableName()).append(".").append(colName).append("\t");
             }
@@ -797,15 +828,21 @@ public class DatabaseEngine {
     }
 
     /**
-     * Helper method to append row data for the JOIN view,
-     * meticulously skipping the original ID columns to align with the header.
+     * Appends the data values of one row to the JOIN result, skipping the {@code id} column
+     * to stay aligned with the header produced by {@link #buildJoinHeader}.
+     *
+     * <p>String literal quotes are stripped from each value before appending.</p>
+     *
+     * @param sb    the result builder to append to
+     * @param table the source table providing column name metadata
+     * @param row   the row whose non-id values are appended
      */
-
     private void buildJoinDataRow(StringBuilder sb, Table table, Row row) {
         List<String> colNames = table.getColumnNames();
         List<String> values = row.getValues();
 
         for (int i = 0; i < colNames.size(); i++) {
+            // Skip 'id' column to align with the JOIN header
             if (!colNames.get(i).equalsIgnoreCase("id")) {
                 sb.append(values.get(i).replace("'", "")).append("\t");
             }
